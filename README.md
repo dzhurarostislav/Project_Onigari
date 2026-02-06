@@ -1,8 +1,8 @@
 # Project Onigari (鬼狩り)
 
-![Logo](<img width="2000" height="2000" alt="鬼狩り" src="https://github.com/user-attachments/assets/01e809b5-b70f-46b6-b36d-a2cc83a15545" />
-<img width="2000" height="2000" alt="鬼狩り" src="https://github.com/user-attachments/assets/01e809b5-b70f-46b6-b36d-a2cc83a15545" />
-)
+![Logo](<p align="center">
+  <img src="鬼狩り.png" width="400" alt="Onigari Logo">
+</p>)
 
 ## Description
 This project is designed to aggregate vacancies from various job platforms and analyze them to distinguish between reputable companies and those with poor practices.
