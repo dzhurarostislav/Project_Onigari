@@ -1,0 +1,15 @@
+# Основа
+aiogram>=3.0  # Для бота (асинхронный, быстрый)
+pydantic>=2.0 # Валидация данных (как в ТЗ)
+python-dotenv # Чтение .env
+
+# Для парсинга (начнем с простого)
+beautifulsoup4
+requests
+aiohttp
+
+# Для мозгов (LLM)
+langchain
+langchain-openai
+langchain-community
+openai
