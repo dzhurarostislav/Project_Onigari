@@ -1,8 +1,8 @@
 # Project Onigari (鬼狩り)
 
-![Logo](<p align="center">
-  <img src="鬼狩り.png" width="400" alt="Onigari Logo">
-</p>)
+<p align="center">
+  <img src="鬼狩り.png" width="400" alt="Project Onigari Logo - Demon Hunter tool for job analysis">
+</p>
 
 ## Description
 This project is designed to aggregate vacancies from various job platforms and analyze them to distinguish between reputable companies and those with poor practices.
