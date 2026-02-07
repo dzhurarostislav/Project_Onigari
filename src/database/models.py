@@ -13,6 +13,7 @@ class Vacancy(Base):
     __tablename__ = "vacancies"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     external_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    is_parsed: Mapped[bool] = mapped_column(default=False)
 
     # Основная информация
     title: Mapped[str] = mapped_column(String(255))
