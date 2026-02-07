@@ -13,3 +13,11 @@ langchain
 langchain-openai
 langchain-community
 openai
+
+# Форматирование кода
+ruff
+black
+
+
+sqlalchemy>=2.0.0
+asyncpg
