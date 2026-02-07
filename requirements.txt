@@ -21,3 +21,4 @@ black
 
 sqlalchemy>=2.0.0
 asyncpg
+pgvector
