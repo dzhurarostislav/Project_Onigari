@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from pgvector.sqlalchemy import Vector  # Для нашего BGE-M3
 from sqlalchemy import DateTime, Float, String, Text
@@ -12,14 +12,16 @@ class Base(DeclarativeBase):
 class Vacancy(Base):
     __tablename__ = "vacancies"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    external_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    external_id: Mapped[str] = mapped_column(String(255), index=True)
+    internal_hash: Mapped[str] = mapped_column(
+        String(255), unique=True, nullable=False, index=True
+    )
+    url: Mapped[str] = mapped_column(String(500), nullable=False)
     is_parsed: Mapped[bool] = mapped_column(default=False)
 
     # Основная информация
     title: Mapped[str] = mapped_column(String(255))
-    company_name: Mapped[str] = mapped_column(String(255))
-
-    # Текст вакансии — используем Text, так как он не имеет лимита по длине
+    company_name: Mapped[str] = mapped_column(String(255), index=True)
     description: Mapped[str] = mapped_column(Text)
 
     # Зарплатная вилка (может быть пустой, поэтому Float | None)
@@ -35,5 +37,6 @@ class Vacancy(Base):
     # Поле для вектора BGE-M3 (размерность 1024)
     embedding: Mapped[Vector] = mapped_column(Vector(1024), nullable=True)
 
-    # Время добавления в систему
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )

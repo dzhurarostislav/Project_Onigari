@@ -1,15 +1,12 @@
 import os
 
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 # В Docker Compose имя сервиса БД — 'db'
 DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql+asyncpg://ryugue:onigari_pass@db:5432/onigari_db"
 )
 
-# Создаем движок (engine)
-engine = create_async_engine(DATABASE_URL, echo=True)
+engine = create_async_engine(DATABASE_URL, echo=os.getenv("DB_ECHO", "False") == "True")
 
-# Фабрика сессий
-async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+async_session = async_sessionmaker(engine, expire_on_commit=False)
