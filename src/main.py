@@ -6,6 +6,7 @@ from sqlalchemy import text
 
 from database.models import Base
 from database.sessions import engine
+from scrapers.dou.client import DouScraper
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -27,12 +28,35 @@ async def setup_database():
         logger.error(f"❌ Failed to connect to database: {e}")
 
 
+async def run_scrapers():
+    """Testing our DOU scraper hunt"""
+    async with DouScraper() as scraper:
+        logger.info("📡 Fetching vacancies from DOU...")
+        vacancies = await scraper.fetch_vacancies(category="Python")
+
+        if not vacancies:
+            logger.warning("💨 No vacancies found. Check selectors or connection.")
+            return
+
+        for v in vacancies[:5]:  # Выведем первые 5 для теста
+            logger.info(f"✅ Found: {v.title} at {v.company_name} | {v.url}")
+
+        logger.info(f"📊 Total fetched: {len(vacancies)}")
+
+
 async def main():
     logger.info("Starting Onigari bot...")
     await setup_database()
     logger.info("Bot is running...")
+
     while True:
-        await asyncio.sleep(3600)
+        try:
+            await run_scrapers()
+            logger.info("Scrapers ran successfully")
+        except Exception as e:
+            logger.error(f"❌ Scrapers crashed: {e}")
+        logger.info("Sleeping for 1 hour...")
+        await asyncio.sleep(60 * 60)
 
 
 if __name__ == "__main__":

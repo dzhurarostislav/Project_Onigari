@@ -22,3 +22,6 @@ black
 sqlalchemy>=2.0.0
 asyncpg
 pgvector
+
+selectolax==0.3.21
+curl-cffi==0.7.1
