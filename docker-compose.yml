@@ -1,0 +1,35 @@
+services:
+  db:
+    image: ankane/pgvector:v0.5.1
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER:-ryugue}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-onigari_pass}
+      POSTGRES_DB: onigari_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Ограничиваем ресурсы для экономии
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-ryugue} -d onigari_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  bot:
+    build: .
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    volumes:
+      - .:/app # Монтируем папку, чтобы код обновлялся без пересборки (для dev)
+
+volumes:
+  postgres_data:
