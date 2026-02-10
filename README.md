@@ -30,7 +30,7 @@ src/
 ├── main.py              # Entry point - sets up DB and runs scrapers
 ├── config.py            # Configuration management (scraper configs)
 ├── database/
-│   ├── models.py        # SQLAlchemy models (Vacancy with pgvector, JSONB, hashing fields)
+│   ├── models.py        # SQLAlchemy models (Vacancy, VacancySnapshot; pgvector, JSONB, hashing)
 │   ├── service.py       # VacancyRepository: batch upsert with deduplication
 │   └── sessions.py      # Async database engine and session factory
 ├── scrapers/
@@ -49,13 +49,20 @@ src/
 ```
 
 ## Database Schema
-The `Vacancy` model includes:
+
+**`Vacancy`** (current state of a job listing):
 - Basic info: `title`, `company_name`, `description`, `url`
 - Tech stack: `tech_stack` (JSONB) with a GIN index for flexible search/filtering
 - Salary: `salary_from`, `salary_to` (optional)
 - HR info: `hr_name`, `hr_link` (optional)
 - Embeddings: `embedding` (1024‑dim vector, reserved for BGE‑M3)
 - Hashing & metadata: `external_id`, `identity_hash`, `content_hash` (optional), `is_parsed`, `created_at`
+- Snapshot link: `last_snapshot_id` → points to the latest `VacancySnapshot`; relationship `last_snapshot` / `snapshots` for history
+
+**`VacancySnapshot`** (versioned history of a vacancy’s description):
+- `vacancy_id` → `Vacancy`
+- `full_description`, `content_hash`, `created_at`
+- Used to track changes over time; each vacancy can have many snapshots and one current “last” snapshot
 
 ## Configuration
 The project uses environment variables for configuration:
@@ -64,14 +71,14 @@ The project uses environment variables for configuration:
 - `DOU_USER_AGENT` - User agent string for DOU requests
 - `DJINNI_COOKIES` - Browser cookies for Djinni.co scraping
 - `DJINNI_USER_AGENT` - User agent string for Djinni requests
- - `DB_ECHO` - Enable SQL echo in logs when set to `"True"`
+- `DB_ECHO` - Enable SQL echo in logs when set to `"True"`
 
 For local development, these are loaded from `.env` via `python-dotenv`.
 
 ## Project Progress
 - [x] Docker infrastructure with PostgreSQL + pgvector
 - [x] Database schema & pgvector extension setup
-- [x] Vacancy model with JSONB tech stack, hashing, parsing status, HR fields, and embedding field
+- [x] Vacancy model with JSONB tech stack, hashing, parsing status, HR fields, embedding field; `VacancySnapshot` for description history
 - [x] Base scraper architecture with async session management
 - [x] DOU scraper (fully implemented: first page + AJAX pagination, parser, DTOs)
 - [x] VacancyRepository with batch upsert & deduplication by `identity_hash`
