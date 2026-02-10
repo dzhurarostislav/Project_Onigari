@@ -1,8 +1,8 @@
 import os
 import logging
-from ..base import BaseScraper
-from .parser import DouParser
-from .schemas import VacancyDTO
+from scrapers.base import BaseScraper
+from scrapers.dou.parser import DouParser
+from scrapers.schemas import VacancyDTO
 
 logger = logging.getLogger("OnigariScraper")
 

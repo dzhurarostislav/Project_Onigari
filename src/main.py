@@ -8,7 +8,7 @@ from database.models import Base
 from database.service import VacancyRepository
 from database.sessions import async_session, engine
 from scrapers.dou.client import DouScraper
-from scrapers.dou.schemas import VacancyDTO
+from scrapers.schemas import VacancyDTO
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -50,21 +50,6 @@ async def run_scrapers():
                 # 3. Сохраняем сразу же!
                 added_count = await repository.batch_upsert(batch)
                 logger.info(f"👹 Trapped {added_count} new demons.")
-
-
-async def save_to_onigari(vacancies: list[VacancyDTO]):
-    """
-    Orchestrator for saving vacanties into db
-    vacancies: list containing structured vacancy dataclass
-    """
-    if not vacancies:
-        return
-
-    logger.info(f"💾 Saving {len(vacancies)} units to database...")
-    async with async_session() as session:
-        repo = VacancyRepository(session)
-        added_count = await repo.batch_upsert(vacancies)
-        logger.info(f"👹 Onigari report: {added_count} new demons trapped.")
 
 
 async def main():

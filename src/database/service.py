@@ -1,38 +1,36 @@
-from dataclasses import asdict
-
 from sqlalchemy.dialects.postgresql import insert
-
 from database.models import Vacancy
-from utils.hashing import generate_vacancy_hash
-
+from scrapers.schemas import VacancyDTO
 
 class VacancyRepository:
     def __init__(self, session):
         self.session = session
 
-    async def batch_upsert(self, vacancies: list) -> int:
+    async def batch_upsert(self, vacancies: list[VacancyDTO]) -> int:
         """
-        Take vacancies, create unique hash for each,
-        save in bd only unique vacancies
-        vacancies: list of vacancies for saving into bd
-        return: number of successfully saved vacancies
+        Сохраняет список вакансий, игнорируя дубликаты по identity_hash.
         """
         if not vacancies:
             return 0
 
+        # 1. Превращаем DTO в список словарей, готовых для JSON/SQL
+        # mode='json' критичен для сериализации HttpUrl в строку
         values = []
         for v in vacancies:
-            # Превращаем dataclass в dict
-            v_dict = asdict(v)
-            # Генерируем хэш и добавляем в словарь
-            v_dict["internal_hash"] = generate_vacancy_hash(v.title, v.company_name)
-            values.append(v_dict)
+            v_data = v.model_dump()
+            v_data['url'] = str(v_data['url'])
+            values.append(v_data)
 
+        # 2. Формируем INSERT
         stmt = insert(Vacancy).values(values)
-        # Указываем, что делать при конфликте хэшей
-        stmt = stmt.on_conflict_do_nothing(index_elements=["internal_hash"])
 
+        # 3. Обработка конфликтов по нашему новому полю identity_hash
+        # Пока оставляем do_nothing, как ты и хотел
+        stmt = stmt.on_conflict_do_nothing(index_elements=["identity_hash"])
+
+        # 4. Выполнение
         result = await self.session.execute(stmt)
         await self.session.commit()
 
+        # result.rowcount вернет количество реально вставленных строк
         return result.rowcount

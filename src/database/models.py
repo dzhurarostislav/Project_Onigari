@@ -1,42 +1,49 @@
-from datetime import datetime, timezone
-
-from pgvector.sqlalchemy import Vector  # Для нашего BGE-M3
-from sqlalchemy import DateTime, Float, String, Text
+from sqlalchemy import String, Float, DateTime, Boolean, Text, Index, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-
+from pgvector.sqlalchemy import Vector
+from datetime import datetime
+from typing import Optional
 
 class Base(DeclarativeBase):
     pass
 
-
 class Vacancy(Base):
     __tablename__ = "vacancies"
+
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    external_id: Mapped[str] = mapped_column(String(255), index=True)
-    internal_hash: Mapped[str] = mapped_column(
-        String(255), unique=True, nullable=False, index=True
-    )
-    url: Mapped[str] = mapped_column(String(500), nullable=False)
-    is_parsed: Mapped[bool] = mapped_column(default=False)
-
-    # Основная информация
-    title: Mapped[str] = mapped_column(String(255))
-    company_name: Mapped[str] = mapped_column(String(255), index=True)
+    external_id: Mapped[str] = mapped_column(String, index=True)
+    
+    title: Mapped[str] = mapped_column(String)
+    company_name: Mapped[str] = mapped_column(String, index=True)
     description: Mapped[str] = mapped_column(Text)
+    
+    # Тот самый JSONB для гибкого поиска по техстеку
+    tech_stack: Mapped[dict] = mapped_column(JSONB, server_default='{}')
 
-    # Зарплатная вилка (может быть пустой, поэтому Float | None)
-    salary_from: Mapped[float | None] = mapped_column(Float)
-    salary_to: Mapped[float | None] = mapped_column(Float)
-
-    hr_name: Mapped[str | None] = mapped_column(String(255))
-    hr_link: Mapped[str | None] = mapped_column(String(500))
-
-    # Наш "Детектор булшита" (от 1.0 до 10.0)
-    cheating_score: Mapped[float] = mapped_column(Float, default=0.0)
-
-    # Поле для вектора BGE-M3 (размерность 1024)
-    embedding: Mapped[Vector] = mapped_column(Vector(1024), nullable=True)
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    # Создаем GIN индекс
+    __table_args__ = (
+        Index(
+            "ix_vacancy_tech_stack_gin", # Имя индекса
+            "tech_stack",                # Поле
+            postgresql_using="gin"       # Магия Postgres
+        ),
     )
+    
+    salary_from: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    salary_to: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    
+    url: Mapped[str] = mapped_column(String, nullable=False)
+
+    hr_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    hr_link: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    
+    # Хеши для дедупликации и отслеживания изменений
+    identity_hash: Mapped[str] = mapped_column(String, unique=True, index=True)
+    content_hash: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    
+    # Вектор для BGE-M3 (1024 измерения)
+    embedding: Mapped[Optional[Vector]] = mapped_column(Vector(1024), nullable=True)
+    
+    is_parsed: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
