@@ -8,7 +8,6 @@ from database.models import Base
 from database.service import VacancyRepository
 from database.sessions import async_session, engine
 from scrapers.dou.client import DouScraper
-from scrapers.schemas import VacancyDTO
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -38,15 +37,15 @@ async def run_scrapers():
     # 1. Открываем сессию, чтобы создать репозиторий
     async with async_session() as session:
         repository = VacancyRepository(session)
-        
+
         async with DouScraper() as scraper:
             logger.info("📡 Onigari is hunting on DOU...")
-            
+
             # 2. Итерируемся по генератору
             async for batch in scraper.fetch_vacancies(category="Python"):
                 if not batch:
                     continue
-                
+
                 # 3. Сохраняем сразу же!
                 added_count = await repository.batch_upsert(batch)
                 logger.info(f"👹 Trapped {added_count} new demons.")
@@ -65,7 +64,7 @@ async def main():
 
         except Exception as e:
             logger.error(f"❌ Scrapers crashed: {e}", exc_info=True)
-            
+
         logger.info("Sleeping for 1 hour...")
         await asyncio.sleep(60 * 60)
 

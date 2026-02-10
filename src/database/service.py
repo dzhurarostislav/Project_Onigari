@@ -1,6 +1,8 @@
 from sqlalchemy.dialects.postgresql import insert
+
 from database.models import Vacancy
 from scrapers.schemas import VacancyDTO
+
 
 class VacancyRepository:
     def __init__(self, session):
@@ -18,7 +20,7 @@ class VacancyRepository:
         values = []
         for v in vacancies:
             v_data = v.model_dump()
-            v_data['url'] = str(v_data['url'])
+            v_data["url"] = str(v_data["url"])
             values.append(v_data)
 
         # 2. Формируем INSERT

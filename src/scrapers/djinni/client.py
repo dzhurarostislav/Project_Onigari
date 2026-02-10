@@ -11,7 +11,7 @@ class DjinniScraper(BaseScraper):
             cookies_str=DJINNI_CONFIG.cookies,
         )
 
-    async def fetch_vacancies(self, page: int = 1) -> str|None:
+    async def fetch_vacancies(self, page: int = 1) -> str | None:
         """
         Fetch vacancies from djinni
         page: page for pagination

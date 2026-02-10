@@ -7,9 +7,7 @@ from typing import Optional
 from curl_cffi.requests import AsyncSession
 
 # Настраиваем логи (потом вынесем в отдельный конфиг)
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("OnigariScraper")
 
 
@@ -39,11 +37,7 @@ class BaseScraper(abc.ABC):
         """
         if not self.raw_cookies:
             return {}
-        return {
-            res.split("=", 1)[0]: res.split("=", 1)[1]
-            for res in self.raw_cookies.split("; ")
-            if "=" in res
-        }
+        return {res.split("=", 1)[0]: res.split("=", 1)[1] for res in self.raw_cookies.split("; ") if "=" in res}
 
     async def __aenter__(self):
         """

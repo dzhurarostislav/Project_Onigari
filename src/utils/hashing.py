@@ -12,6 +12,7 @@ def generate_vacancy_identity_hash(title: str, company: str) -> str:
     raw_data = f"{title.lower().strip()}|{company.lower().strip()}"
     return hashlib.sha256(raw_data.encode()).hexdigest()
 
+
 def generate_vacancy_content_hash(description: str) -> str:
     """
     Create unique hashcode based on description of vacancy
