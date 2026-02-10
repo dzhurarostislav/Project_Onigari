@@ -11,6 +11,12 @@ class VacancyRepository:
         self.session = session
 
     async def batch_upsert(self, vacancies: list) -> int:
+        """
+        Take vacancies, create unique hash for each,
+        save in bd only unique vacancies
+        vacancies: list of vacancies for saving into bd
+        return: number of successfully saved vacancies
+        """
         if not vacancies:
             return 0
 

@@ -15,8 +15,8 @@ logger = logging.getLogger("OnigariScraper")
 
 class BaseScraper(abc.ABC):
     """
-    Абстрактный фундамент. Он не знает о Djinni или Dou,
-    он знает только о логике сетевого взаимодействия.
+    Absctact class contain main logic of for any parser
+    abcstractmethod -> fetch_vacancies.
     """
 
     def __init__(self, base_url: str, user_agent: str, cookies_str: str):
@@ -26,13 +26,17 @@ class BaseScraper(abc.ABC):
         self._session: Optional[AsyncSession] = None
 
     async def _random_pause(self, min_sec: int = 2, max_sec: int = 7):
-        """Simulate human-like behavior with random delays."""
+        """
+        simulate human-like behavior with random delays.
+        """
         pause = random.uniform(min_sec, max_sec)
         logger.info(f"Sleeping for {pause:.2f} seconds...")
         await asyncio.sleep(pause)
 
     def _get_cookie_dict(self) -> dict:
-        """Превращает строку кук из браузера в словарь для сессии."""
+        """
+        transform cookie string from browser into dict
+        """
         if not self.raw_cookies:
             return {}
         return {
@@ -42,7 +46,9 @@ class BaseScraper(abc.ABC):
         }
 
     async def __aenter__(self):
-        """Открываем сессию при входе в блок async with"""
+        """
+        magic method, create async session when entering async with
+        """
         logger.info(f"Initiating session for {self.base_url}...")
         self._session = AsyncSession(impersonate="chrome")
         self._session.headers.update(
@@ -55,7 +61,9 @@ class BaseScraper(abc.ABC):
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Закрываем сессию при выходе"""
+        """
+        close session after program left async with
+        """
         if self._session:
             await self._session.close()
             logger.info(f"Session for {self.base_url} closed.")
@@ -63,6 +71,8 @@ class BaseScraper(abc.ABC):
             logger.error(f"An error occurred: {exc_val}")
 
     @abc.abstractmethod
-    async def fetch_vacancies(self, page: int):
-        """Каждый скрапер должен реализовать свой метод получения данных."""
+    async def fetch_vacancies(self, category: str, **kwargs):
+        """
+        Every scraper must create his own method of fetching data
+        """
         pass

@@ -10,6 +10,12 @@ logger = logging.getLogger("OnigariScraper")
 
 class DouParser:
     def parse_list(self, html_content: str) -> list[VacancyDTO]:
+        """
+        parse raw html from dou using selectolax
+        and generate dataclass VacancyDTO with bd structure
+        html_content: raw html content of site
+        return: list containing structured vacancy info
+        """
         parser = LexborHTMLParser(html_content)
         items = parser.css("li.l-vacancy")
 
@@ -53,6 +59,10 @@ class DouParser:
         return vacancies
 
     def _parse_dou_salary(self, salary_str: str | None):
+        """
+        Parse string into min and max salary
+        salary_str: string containing salary
+        """
         if not salary_str:
             return None, None
         clean_str = salary_str.replace("$", "").replace("\xa0", "").replace(" ", "")

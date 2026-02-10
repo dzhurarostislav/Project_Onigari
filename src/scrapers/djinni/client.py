@@ -11,9 +11,14 @@ class DjinniScraper(BaseScraper):
             cookies_str=DJINNI_CONFIG.cookies,
         )
 
-    async def fetch_vacancies(self, page: int = 1):
+    async def fetch_vacancies(self, page: int = 1) -> str|None:
+        """
+        Fetch vacancies from djinni
+        page: page for pagination
+        return: raw html code from site
+        """
         if not self._session:
-            raise RuntimeError("Ау-ау! Сначала используй 'async with'!")
+            raise RuntimeError("first use 'async with'!")
 
         url = f"{self.base_url}/jobs/?page={page}"
 
@@ -23,5 +28,5 @@ class DjinniScraper(BaseScraper):
         if response.status_code == 200:
             return response.text
         else:
-            print(f"Ошибка {response.status_code} на странице {page}")
+            print(f"Error {response.status_code} on page {page}")
             return None

@@ -15,6 +15,9 @@ logger = logging.getLogger(__name__)
 
 
 async def setup_database():
+    """
+    create/confirm db tables, also create pgvector extension
+    """
     try:
         async with engine.begin() as conn:
             await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
@@ -30,25 +33,30 @@ async def setup_database():
         logger.error(f"❌ Failed to connect to database: {e}")
 
 
-async def run_scrapers() -> list[VacancyDTO]:
-    """Fetching our DOU scraper hunt"""
-    async with DouScraper() as scraper:
-        logger.info("📡 Fetching vacancies from DOU...")
-        vacancies = await scraper.fetch_vacancies(category="Python")
-
-        if not vacancies:
-            logger.warning("💨 No vacancies found. Check selectors or connection.")
-            return []
-
-        for v in vacancies[:5]:  # Выведем первые 5 для теста
-            logger.info(f"✅ Found: {v.title} at {v.company_name} | {v.url}")
-
-        logger.info(f"📊 Total fetched: {len(vacancies)}")
-        return vacancies
+async def run_scrapers():
+    """Оркестратор: получает пачки и сразу отправляет их в ловушку."""
+    # 1. Открываем сессию, чтобы создать репозиторий
+    async with async_session() as session:
+        repository = VacancyRepository(session)
+        
+        async with DouScraper() as scraper:
+            logger.info("📡 Onigari is hunting on DOU...")
+            
+            # 2. Итерируемся по генератору
+            async for batch in scraper.fetch_vacancies(category="Python"):
+                if not batch:
+                    continue
+                
+                # 3. Сохраняем сразу же!
+                added_count = await repository.batch_upsert(batch)
+                logger.info(f"👹 Trapped {added_count} new demons.")
 
 
 async def save_to_onigari(vacancies: list[VacancyDTO]):
-    """Только сохранение. Никакой сети."""
+    """
+    Orchestrator for saving vacanties into db
+    vacancies: list containing structured vacancy dataclass
+    """
     if not vacancies:
         return
 
@@ -66,19 +74,13 @@ async def main():
 
     while True:
         try:
-            # 1. Запускаем скраперы.
-            raw_data = await run_scrapers()
-            logger.info("Scrapers ran successfully")
-
-            # 2. Очистка и сохранение (Чистая функция записи)
-            if raw_data:
-                await save_to_onigari(raw_data)
-                logger.info("Cycle completed successfully")
-            else:
-                logger.info("Nothing to save this time")
+            # Просто вызываем. Вся логика сохранения теперь внутри run_scrapers
+            await run_scrapers()
+            logger.info("Cycle completed successfully")
 
         except Exception as e:
             logger.error(f"❌ Scrapers crashed: {e}", exc_info=True)
+            
         logger.info("Sleeping for 1 hour...")
         await asyncio.sleep(60 * 60)
 
