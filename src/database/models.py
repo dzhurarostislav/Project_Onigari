@@ -3,7 +3,8 @@ from datetime import datetime
 from typing import Optional
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, Float, ForeignKey, Index, String, Text, func, Enum as SQLEnum, Table, Column
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Index, String, Table, Text, func
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 

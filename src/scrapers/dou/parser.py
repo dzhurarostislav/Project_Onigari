@@ -3,7 +3,7 @@ import re
 
 from selectolax.lexbor import LexborHTMLParser
 
-from scrapers.schemas import VacancyBaseDTO, CompanyBaseDTO, CompanyFullDTO
+from scrapers.schemas import CompanyBaseDTO, VacancyBaseDTO
 
 logger = logging.getLogger("OnigariScraper")
 
