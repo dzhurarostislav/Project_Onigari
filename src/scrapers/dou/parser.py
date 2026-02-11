@@ -3,16 +3,16 @@ import re
 
 from selectolax.lexbor import LexborHTMLParser
 
-from scrapers.schemas import VacancyDTO
+from scrapers.schemas import VacancyBaseDTO, CompanyBaseDTO, CompanyFullDTO
 
 logger = logging.getLogger("OnigariScraper")
 
 
 class DouParser:
-    def parse_list(self, html_content: str) -> list[VacancyDTO]:
+    def parse_list(self, html_content: str) -> list[VacancyBaseDTO]:
         """
         parse raw html from dou using selectolax
-        and generate dataclass VacancyDTO with bd structure
+        and generate dataclass VacancyBaseDTO with bd structure
         html_content: raw html content of site
         return: list containing structured vacancy info
         """
@@ -42,10 +42,10 @@ class DouParser:
             salary_from, salary_to = self._parse_dou_salary(salary_node.text(strip=True) if salary_node else None)
 
             vacancies.append(
-                VacancyDTO(
+                VacancyBaseDTO(
                     external_id=external_id,
                     title=title_node.text(strip=True),
-                    company_name=company_node.text(strip=True) if company_node else "Unknown",
+                    company=CompanyBaseDTO(name=company_node.text(strip=True) if company_node else "Unknown"),
                     description=item.css_first(".sh-info").text(strip=True),
                     salary_from=salary_from,
                     salary_to=salary_to,

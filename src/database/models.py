@@ -1,14 +1,30 @@
+import enum
 from datetime import datetime
 from typing import Optional
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, String, Text, func
+from sqlalchemy import DateTime, Float, ForeignKey, Index, String, Text, func, Enum as SQLEnum, Table, Column
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
+class VacancyStatus(enum.Enum):
+    NEW = "new"
+    EXTRACTED = "extracted"
+    ANALYZED = "analyzed"
+    FAILED = "failed"
+
+
 class Base(DeclarativeBase):
     pass
+
+
+company_tags = Table(
+    "company_tags",
+    Base.metadata,
+    Column("company_id", ForeignKey("companies.id"), primary_key=True),
+    Column("tag_id", ForeignKey("tags.id"), primary_key=True),
+)
 
 
 class Vacancy(Base):
@@ -36,8 +52,10 @@ class Vacancy(Base):
         back_populates="vacancy",
     )
 
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    company: Mapped["Company"] = relationship("Company", back_populates="vacancies")
+
     title: Mapped[str] = mapped_column(String)
-    company_name: Mapped[str] = mapped_column(String, index=True)
     description: Mapped[str] = mapped_column(Text)
 
     # Тот самый JSONB для гибкого поиска по техстеку
@@ -65,7 +83,7 @@ class Vacancy(Base):
     # Вектор для BGE-M3 (1024 измерения)
     embedding: Mapped[Optional[Vector]] = mapped_column(Vector(1024), nullable=True)
 
-    is_parsed: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[VacancyStatus] = mapped_column(SQLEnum(VacancyStatus), default=VacancyStatus.NEW, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
@@ -87,3 +105,26 @@ class VacancySnapshot(Base):
 
     content_hash: Mapped[str] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class Company(Base):
+    __tablename__ = "companies"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+
+    name: Mapped[str] = mapped_column(String, unique=True)
+    description: Mapped[str] = mapped_column(Text)
+    dou_url: Mapped[str] = mapped_column(String)
+
+    vacancies: Mapped[list[Vacancy]] = relationship("Vacancy", back_populates="company")
+
+    tags: Mapped[list["Tag"]] = relationship("Tag", secondary=company_tags, back_populates="companies")
+
+
+class Tag(Base):
+    __tablename__ = "tags"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+
+    name: Mapped[str] = mapped_column(String, unique=True)
+
+    companies: Mapped[list["Company"]] = relationship("Company", secondary=company_tags, back_populates="tags")
