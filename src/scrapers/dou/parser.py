@@ -3,7 +3,7 @@ import re
 
 from selectolax.lexbor import LexborHTMLParser
 
-from scrapers.schemas import CompanyBaseDTO, VacancyBaseDTO, VacancyDetailDTO, CompanyFullDTO
+from scrapers.schemas import CompanyBaseDTO, CompanyFullDTO, VacancyBaseDTO, VacancyDetailDTO
 from utils.hashing import generate_vacancy_content_hash
 
 logger = logging.getLogger("OnigariScraper")
@@ -75,24 +75,24 @@ class DouParser:
         Извлекает полное мясо вакансии со страницы через Selectolax.
         """
         parser = LexborHTMLParser(html_content)
-        
+
         # 1. Текст вакансии. На DOU это либо .vacancy-section, либо .b-typo
         desc_node = parser.css_first(".vacancy-section") or parser.css_first(".b-typo")
         full_description = desc_node.text(strip=True) if desc_node else ""
-        
+
         # 2. Генерируем content_hash для отслеживания изменений текста
         content_hash = generate_vacancy_content_hash(full_description)
-        
+
         # 3. Ищем данные HR-специалиста (блок .sh-info на детальной странице)
         hr_name = None
         hr_link = None
         hr_node = parser.css_first(".sh-info")
-        
+
         if hr_node:
             name_node = hr_node.css_first(".name")
             if name_node:
                 hr_name = name_node.text(strip=True)
-                
+
             # Ищем ссылку на профиль (обычно первая ссылка в этом блоке)
             link_node = hr_node.css_first("a")
             if link_node:
@@ -114,5 +114,5 @@ class DouParser:
             full_description=full_description,
             content_hash=content_hash,
             hr_name=hr_name,
-            hr_link=hr_link
+            hr_link=hr_link,
         )

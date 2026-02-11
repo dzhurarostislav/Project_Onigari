@@ -7,9 +7,9 @@ from sqlalchemy import text
 from database.models import Base
 from database.service import VacancyRepository
 from database.sessions import async_session, engine
+from scrapers.crawler import DetailCrawler
 from scrapers.dou.client import DouScraper
 from scrapers.dou.parser import DouParser
-from scrapers.crawler import DetailCrawler
 
 
 # 1. Централизованная настройка логов
@@ -61,11 +61,11 @@ async def run_deep_extraction():
     async with async_session() as session:
         repository = VacancyRepository(session)
         # Нам нужны "руки" и "глаза" для кравлера
-        async with DouScraper() as scraper: 
+        async with DouScraper() as scraper:
             parser = DouParser()
-            
+
             crawler = DetailCrawler(repository, scraper, parser)
-            
+
             logger.info("🔪 Starting deep extraction of vacancy details...")
             # Берем, например, 20 штук за раз
             await crawler.crawl(limit=20)

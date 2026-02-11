@@ -9,12 +9,14 @@ from utils.hashing import generate_vacancy_identity_hash
 
 class CompanyBaseDTO(BaseModel):
     """Минимум информации из списка вакансий"""
+
     model_config = ConfigDict(from_attributes=True)
     name: str
 
 
 class CompanyFullDTO(CompanyBaseDTO):
     """Полная информация из страницы вакансии или профиля компании"""
+
     model_config = ConfigDict(from_attributes=True)
     dou_url: Optional[str] = None
     description: Optional[str] = None
@@ -54,6 +56,7 @@ class VacancyBaseDTO(BaseModel):
 
 class VacancyDetailDTO(VacancyBaseDTO):
     """Детальная вакансия (Full Page Scan)"""
+
     model_config = ConfigDict(from_attributes=True)
     # ПЕРЕОПРЕДЕЛЯЕМ поле: здесь нам уже нужна полная компания с тегами
     company: CompanyFullDTO

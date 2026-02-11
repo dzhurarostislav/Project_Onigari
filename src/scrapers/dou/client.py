@@ -1,7 +1,7 @@
 import logging
 import os
-
 from typing import Optional
+
 from scrapers.base import BaseScraper
 from scrapers.dou.parser import DouParser
 
@@ -113,15 +113,14 @@ class DouScraper(BaseScraper):
         Отвечает только за сеть: заголовки, куки, обход защиты.
         """
         try:
-
             safe_url = str(url)
             logger.info(f"📡 Hunting for content at: {url}")
             # Мы используем ту же сессию с теми же куками и заголовками
             response = await self._session.get(safe_url)
-            
+
             if response.status_code == 200:
                 return response.text
-            
+
             logger.error(f"❌ Page fetch failed: {response.status_code} for {url}")
             return None
         except Exception as e:

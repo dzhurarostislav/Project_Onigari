@@ -1,10 +1,10 @@
 import logging
 
 from sqlalchemy import select, update
-from sqlalchemy.orm import selectinload
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import selectinload
 
-from database.models import Company, Vacancy, VacancyStatus, VacancySnapshot
+from database.models import Company, Vacancy, VacancySnapshot, VacancyStatus
 from scrapers.schemas import VacancyBaseDTO, VacancyDetailDTO
 
 logger = logging.getLogger(__name__)
@@ -88,7 +88,7 @@ class VacancyRepository:
         """
         stmt = (
             select(Vacancy)
-            .options(selectinload(Vacancy.company)) # Жадная загрузка компании
+            .options(selectinload(Vacancy.company))  # Жадная загрузка компании
             .where(Vacancy.status == status)
             .limit(limit)
         )
@@ -101,28 +101,26 @@ class VacancyRepository:
         """
         # 1. Создаем снапшот (историю)
         snapshot = VacancySnapshot(
-            vacancy_id=vacancy_id,
-            full_description=detail_dto.full_description,
-            content_hash=detail_dto.content_hash
+            vacancy_id=vacancy_id, full_description=detail_dto.full_description, content_hash=detail_dto.content_hash
         )
         self.session.add(snapshot)
-        
+
         # Нам нужно, чтобы база присвоила ID снапшоту, прежде чем мы привяжем его к вакансии
-        await self.session.flush() 
+        await self.session.flush()
 
         # 2. Обновляем основную запись вакансии
         stmt = (
             update(Vacancy)
             .where(Vacancy.id == vacancy_id)
             .values(
-                description=detail_dto.description, # Краткое можно обновить, если оно стало лучше
+                description=detail_dto.description,  # Краткое можно обновить, если оно стало лучше
                 content_hash=detail_dto.content_hash,
                 hr_name=detail_dto.hr_name,
                 hr_link=detail_dto.hr_link,
-                last_snapshot_id=snapshot.id, # Привязываем актуальный снимок
-                status=VacancyStatus.EXTRACTED # Метка: "Данные собраны"
+                last_snapshot_id=snapshot.id,  # Привязываем актуальный снимок
+                status=VacancyStatus.EXTRACTED,  # Метка: "Данные собраны"
             )
         )
-        
+
         await self.session.execute(stmt)
         await self.session.commit()
