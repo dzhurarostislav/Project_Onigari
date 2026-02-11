@@ -1,10 +1,11 @@
 import logging
 import os
 
+from typing import Optional
 from scrapers.base import BaseScraper
 from scrapers.dou.parser import DouParser
 
-logger = logging.getLogger("OnigariScraper")
+logger = logging.getLogger(__name__)
 
 
 class DouScraper(BaseScraper):
@@ -105,3 +106,24 @@ class DouScraper(BaseScraper):
             except Exception as e:
                 logger.warning(f"⚠️ AJAX cycle interrupted: {e}")
                 break
+
+    async def fetch_page_html(self, url: str) -> Optional[str]:
+        """
+        Универсальный метод для скачивания HTML.
+        Отвечает только за сеть: заголовки, куки, обход защиты.
+        """
+        try:
+
+            safe_url = str(url)
+            logger.info(f"📡 Hunting for content at: {url}")
+            # Мы используем ту же сессию с теми же куками и заголовками
+            response = await self._session.get(safe_url)
+            
+            if response.status_code == 200:
+                return response.text
+            
+            logger.error(f"❌ Page fetch failed: {response.status_code} for {url}")
+            return None
+        except Exception as e:
+            logger.error(f"❌ Network error during hunt: {e}")
+            return None

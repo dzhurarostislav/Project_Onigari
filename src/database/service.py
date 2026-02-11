@@ -1,9 +1,11 @@
 import logging
 
+from sqlalchemy import select, update
+from sqlalchemy.orm import selectinload
 from sqlalchemy.dialects.postgresql import insert
 
-from database.models import Company, Vacancy, VacancyStatus
-from scrapers.schemas import VacancyBaseDTO
+from database.models import Company, Vacancy, VacancyStatus, VacancySnapshot
+from scrapers.schemas import VacancyBaseDTO, VacancyDetailDTO
 
 logger = logging.getLogger(__name__)
 
@@ -78,3 +80,49 @@ class VacancyRepository:
             logger.info("ℹ️ No new vacancies added (all duplicates).")
 
         return result.rowcount
+
+    async def get_vacancies_by_status(self, status: VacancyStatus, limit: int = 10) -> list[Vacancy]:
+        """
+        Возвращает список вакансий с заданным статусом.
+        Используем selectinload, чтобы сразу иметь доступ к компании (нам понадобится её URL).
+        """
+        stmt = (
+            select(Vacancy)
+            .options(selectinload(Vacancy.company)) # Жадная загрузка компании
+            .where(Vacancy.status == status)
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+    async def update_vacancy_details(self, vacancy_id: int, detail_dto: "VacancyDetailDTO"):
+        """
+        Переводит вакансию из NEW в EXTRACTED, сохраняя полное описание и снапшот.
+        """
+        # 1. Создаем снапшот (историю)
+        snapshot = VacancySnapshot(
+            vacancy_id=vacancy_id,
+            full_description=detail_dto.full_description,
+            content_hash=detail_dto.content_hash
+        )
+        self.session.add(snapshot)
+        
+        # Нам нужно, чтобы база присвоила ID снапшоту, прежде чем мы привяжем его к вакансии
+        await self.session.flush() 
+
+        # 2. Обновляем основную запись вакансии
+        stmt = (
+            update(Vacancy)
+            .where(Vacancy.id == vacancy_id)
+            .values(
+                description=detail_dto.description, # Краткое можно обновить, если оно стало лучше
+                content_hash=detail_dto.content_hash,
+                hr_name=detail_dto.hr_name,
+                hr_link=detail_dto.hr_link,
+                last_snapshot_id=snapshot.id, # Привязываем актуальный снимок
+                status=VacancyStatus.EXTRACTED # Метка: "Данные собраны"
+            )
+        )
+        
+        await self.session.execute(stmt)
+        await self.session.commit()

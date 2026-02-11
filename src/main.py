@@ -8,6 +8,8 @@ from database.models import Base
 from database.service import VacancyRepository
 from database.sessions import async_session, engine
 from scrapers.dou.client import DouScraper
+from scrapers.dou.parser import DouParser
+from scrapers.crawler import DetailCrawler
 
 
 # 1. Централизованная настройка логов
@@ -54,6 +56,21 @@ async def run_scrapers():
                     logger.info(f"👹 Trapped {added_count} new demons in the database.")
 
 
+async def run_deep_extraction():
+    """Фаза 2: Глубокое потрошение вакансий (Extraction)"""
+    async with async_session() as session:
+        repository = VacancyRepository(session)
+        # Нам нужны "руки" и "глаза" для кравлера
+        async with DouScraper() as scraper: 
+            parser = DouParser()
+            
+            crawler = DetailCrawler(repository, scraper, parser)
+            
+            logger.info("🔪 Starting deep extraction of vacancy details...")
+            # Берем, например, 20 штук за раз
+            await crawler.crawl(limit=20)
+
+
 async def main():
     setup_logging()  # Вызываем настройку логов первым делом
     logger.info("👹 Project Onigari (鬼狩り) is waking up...")
@@ -62,9 +79,11 @@ async def main():
 
     while True:
         try:
-            logger.info("🚀 Starting new scraping cycle...")
+            logger.info("🚀 Phase 1: Discovery started...")
             await run_scrapers()
-            logger.info("🏁 Cycle completed successfully.")
+            logger.info("🚀 Phase 2: Deep Extraction started...")
+            await run_deep_extraction()
+            logger.info("🏁 Full hunting cycle completed successfully.")
         except Exception as e:
             # exc_info=True выведет весь traceback ошибки
             logger.error(f"⚠️ Scraper cycle failed: {e}", exc_info=True)
