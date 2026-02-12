@@ -27,42 +27,62 @@ This project aggregates vacancies from various job platforms and analyzes them t
 ## Project Structure
 ```
 src/
-├── main.py              # Entry point - sets up DB and runs scrapers
-├── config.py            # Configuration management (scraper configs)
+├── main.py              # Entry point - orchestrates discovery & deep extraction cycles
+├── config.py            # Configuration management (scraper configs, env)
 ├── database/
-│   ├── models.py        # SQLAlchemy models (Vacancy, VacancySnapshot; pgvector, JSONB, hashing)
-│   ├── service.py       # VacancyRepository: batch upsert with deduplication
+│   ├── models.py        # SQLAlchemy models: Vacancy, VacancySnapshot, Company, Tag; pgvector, JSONB, statuses, hashing
+│   ├── service.py       # VacancyRepository: company upsert, vacancy batch upsert, deep-extraction & snapshot updates
 │   └── sessions.py      # Async database engine and session factory
 ├── scrapers/
-│   ├── base.py          # BaseScraper abstract class with session management
-│   ├── schemas.py       # Shared Pydantic VacancyDTO for all scrapers
-│   ├── dou/             # DOU.ua scraper (fully implemented)
-│   │   ├── client.py    # DouScraper - HTTP client + AJAX pagination
-│   │   └── parser.py    # DouParser - HTML parsing logic
+│   ├── base.py          # BaseScraper: shared async HTTP/session logic
+│   ├── schemas.py       # Pydantic DTOs: CompanyBase/Full, VacancyBase/Detail
+│   ├── crawler.py       # DetailCrawler: deep extraction + VacancyStatus transitions
+│   ├── dou/             # DOU.ua scraper (implemented)
+│   │   ├── client.py    # DouScraper - async listing fetch + AJAX pagination
+│   │   └── parser.py    # DouParser - list & detail parsing (VacancyBaseDTO / VacancyDetailDTO)
 │   └── djinni/          # Djinni.co scraper (client ready, parser pending)
-│       ├── client.py    # DjinniScraper - HTTP client
+│       ├── client.py    # DjinniScraper - HTTP client (listing HTML)
 │       └── parser.py    # Parser implementation pending
 ├── brain/
 │   └── analyzer.py      # LLM analysis engine (planned)
 └── utils/
-    └── hashing.py       # SHA-256 based vacancy hash generator
+    └── hashing.py       # SHA-256 based hash helpers (identity/content)
 ```
+
+## Data Flow
+
+- **Phase 1 – Discovery (list pages)**:  
+  `DouScraper.fetch_vacancies()` is an async generator that yields batches of `VacancyBaseDTO`.  
+  `VacancyRepository.batch_upsert()` upserts companies and inserts new vacancies with `VacancyStatus.NEW`, using `identity_hash` for deduplication.
+
+- **Phase 2 – Deep extraction (detail pages)**:  
+  `DetailCrawler` selects vacancies with status `NEW`, fetches full HTML via `DouScraper`, and uses `DouParser.parse_detail()` to build `VacancyDetailDTO`.  
+  `VacancyRepository.update_vacancy_details()` creates a `VacancySnapshot`, updates the main vacancy fields, and switches status to `VacancyStatus.EXTRACTED`.
 
 ## Database Schema
 
 **`Vacancy`** (current state of a job listing):
-- Basic info: `title`, `company_name`, `description`, `url`
+- Basic info: `title`, `description`, `url`
+- Company link: `company_id` → `Company`
 - Tech stack: `tech_stack` (JSONB) with a GIN index for flexible search/filtering
 - Salary: `salary_from`, `salary_to` (optional)
 - HR info: `hr_name`, `hr_link` (optional)
 - Embeddings: `embedding` (1024‑dim vector, reserved for BGE‑M3)
-- Hashing & metadata: `external_id`, `identity_hash`, `content_hash` (optional), `is_parsed`, `created_at`
+- Hashing & metadata: `external_id`, `identity_hash`, `content_hash` (optional), `status` (`VacancyStatus`), `created_at`
 - Snapshot link: `last_snapshot_id` → points to the latest `VacancySnapshot`; relationship `last_snapshot` / `snapshots` for history
 
 **`VacancySnapshot`** (versioned history of a vacancy’s description):
 - `vacancy_id` → `Vacancy`
 - `full_description`, `content_hash`, `created_at`
 - Used to track changes over time; each vacancy can have many snapshots and one current “last” snapshot
+
+**`Company`**:
+- Core info: `name`, `description`, `dou_url`
+- Relations: `vacancies` (one-to-many), `tags` (many-to-many via `company_tags`)
+
+**`Tag`**:
+- Core info: `name`
+- Relations: `companies` (many-to-many via `company_tags`)
 
 ## Configuration
 The project uses environment variables for configuration:
