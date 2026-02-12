@@ -1,9 +1,8 @@
 import logging
 
-from sqlalchemy import select, update, bindparam
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import selectinload
-
 
 from database.models import Company, Vacancy, VacancySnapshot, VacancyStatus
 from scrapers.schemas import VacancyBaseDTO, VacancyDetailDTO
@@ -142,18 +141,11 @@ class VacancyRepository:
         # Ключи в словаре должны СОВПАДАТЬ с именами атрибутов в модели Vacancy.
         # 'id' обязателен — по нему SQLAlchemy поймет, какую строку обновлять (WHERE id = ...).
         formatted_data = [
-            {
-                "id": d["b_id"],
-                "embedding": d["b_embedding"],
-                "status": new_status # Передаем сам объект Enum
-            }
+            {"id": d["b_id"], "embedding": d["b_embedding"], "status": new_status}  # Передаем сам объект Enum
             for d in vector_data
         ]
 
-        # 2. В SQLAlchemy 2.0 вызов execute(update(Model), list_of_dicts) 
+        # 2. В SQLAlchemy 2.0 вызов execute(update(Model), list_of_dicts)
         # — это официальный способ массового обновления по первичному ключу.
-        await self.session.execute(
-            update(Vacancy),
-            formatted_data
-        )
+        await self.session.execute(update(Vacancy), formatted_data)
         await self.session.commit()
