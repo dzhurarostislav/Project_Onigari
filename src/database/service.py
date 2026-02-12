@@ -1,8 +1,9 @@
 import logging
 
-from sqlalchemy import select, update
+from sqlalchemy import select, update, bindparam
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import selectinload
+
 
 from database.models import Company, Vacancy, VacancySnapshot, VacancyStatus
 from scrapers.schemas import VacancyBaseDTO, VacancyDetailDTO
@@ -84,14 +85,19 @@ class VacancyRepository:
     async def get_vacancies_by_status(self, status: VacancyStatus, limit: int = 10) -> list[Vacancy]:
         """
         Возвращает список вакансий с заданным статусом.
-        Используем selectinload, чтобы сразу иметь доступ к компании (нам понадобится её URL).
+        Используем selectinload для компании. Снапшот грузим только если он нужен.
         """
         stmt = (
             select(Vacancy)
-            .options(selectinload(Vacancy.company))  # Жадная загрузка компании
+            .options(selectinload(Vacancy.company))  # Компании нужны почти всегда
             .where(Vacancy.status == status)
             .limit(limit)
         )
+
+        # Подгружаем полный текст только для векторизации (статус EXTRACTED)
+        if status == VacancyStatus.EXTRACTED:
+            stmt = stmt.options(selectinload(Vacancy.last_snapshot))
+
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
@@ -123,4 +129,31 @@ class VacancyRepository:
         )
 
         await self.session.execute(stmt)
+        await self.session.commit()
+
+    async def batch_update_vectors(self, vector_data: list[dict], new_status: VacancyStatus = VacancyStatus.VECTORIZED):
+        """
+        vector_data: list of dicts like [{"b_id": 1, "b_embedding": [0.1, 0.2, ...]}, ...]
+        """
+        if not vector_data:
+            return
+
+        # 1. Приводим данные к формату, который SQLAlchemy 2.0 понимает автоматически.
+        # Ключи в словаре должны СОВПАДАТЬ с именами атрибутов в модели Vacancy.
+        # 'id' обязателен — по нему SQLAlchemy поймет, какую строку обновлять (WHERE id = ...).
+        formatted_data = [
+            {
+                "id": d["b_id"],
+                "embedding": d["b_embedding"],
+                "status": new_status # Передаем сам объект Enum
+            }
+            for d in vector_data
+        ]
+
+        # 2. В SQLAlchemy 2.0 вызов execute(update(Model), list_of_dicts) 
+        # — это официальный способ массового обновления по первичному ключу.
+        await self.session.execute(
+            update(Vacancy),
+            formatted_data
+        )
         await self.session.commit()

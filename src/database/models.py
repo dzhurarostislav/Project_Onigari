@@ -13,6 +13,7 @@ class VacancyStatus(enum.Enum):
     NEW = "new"
     EXTRACTED = "extracted"
     ANALYZED = "analyzed"
+    VECTORIZED = "vectorized"
     FAILED = "failed"
 
 
@@ -84,7 +85,7 @@ class Vacancy(Base):
     # Вектор для BGE-M3 (1024 измерения)
     embedding: Mapped[Optional[Vector]] = mapped_column(Vector(1024), nullable=True)
 
-    status: Mapped[VacancyStatus] = mapped_column(SQLEnum(VacancyStatus), default=VacancyStatus.NEW, nullable=False)
+    status: Mapped[VacancyStatus] = mapped_column(SQLEnum(VacancyStatus), default=VacancyStatus.NEW, nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
