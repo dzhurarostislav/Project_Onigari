@@ -16,7 +16,7 @@ This project aggregates vacancies from various job platforms and analyzes them t
 * **Language:** Python 3.11+ (asynchronous)
 * **Orchestration:** Docker & Docker Compose
 * **LLM:** LangChain / OpenAI (planned: Ollama with local GPU)
-* **Embedding Model:** BGE-M3 (1024 dimensions) – planned, DB field already reserved
+* **Embedding Model:** BGE-M3 (1024 dimensions) via `sentence-transformers`; GPU (CUDA) when available
 * **Database:** PostgreSQL + **pgvector** (for semantic search) + JSONB
 * **ORM:** SQLAlchemy 2.0 (async) + PostgreSQL `INSERT ... ON CONFLICT`
 * **Validation / DTOs:** Pydantic models for `VacancyDTO`
@@ -28,10 +28,11 @@ This project aggregates vacancies from various job platforms and analyzes them t
 ```
 src/
 ├── main.py              # Entry point - orchestrates discovery & deep extraction cycles
+├── run_vectorizer.py    # Standalone worker: EXTRACTED → BGE-M3 embeddings → VECTORIZED
 ├── config.py            # Configuration management (scraper configs, env)
 ├── database/
 │   ├── models.py        # SQLAlchemy models: Vacancy, VacancySnapshot, Company, Tag; pgvector, JSONB, statuses, hashing
-│   ├── service.py       # VacancyRepository: company upsert, vacancy batch upsert, deep-extraction & snapshot updates
+│   ├── service.py       # VacancyRepository: upsert, deep-extraction, snapshot updates, batch_update_vectors
 │   └── sessions.py      # Async database engine and session factory
 ├── scrapers/
 │   ├── base.py          # BaseScraper: shared async HTTP/session logic
@@ -44,6 +45,7 @@ src/
 │       ├── client.py    # DjinniScraper - HTTP client (listing HTML)
 │       └── parser.py    # Parser implementation pending
 ├── brain/
+│   ├── vectorizer.py    # VacancyVectorizer: BGE-M3 embeddings (title + company + description/snapshot)
 │   └── analyzer.py      # LLM analysis engine (planned)
 └── utils/
     └── hashing.py       # SHA-256 based hash helpers (identity/content)
@@ -59,6 +61,9 @@ src/
   `DetailCrawler` selects vacancies with status `NEW`, fetches full HTML via `DouScraper`, and uses `DouParser.parse_detail()` to build `VacancyDetailDTO`.  
   `VacancyRepository.update_vacancy_details()` creates a `VacancySnapshot`, updates the main vacancy fields, and switches status to `VacancyStatus.EXTRACTED`.
 
+- **Phase 3 – Vectorization (optional worker)**:  
+  `run_vectorizer.py` runs as a separate process: it loads `VacancyVectorizer` (BGE-M3 via `sentence-transformers`), fetches vacancies with status `EXTRACTED`, encodes title + company + full description (from `last_snapshot` or `description`), and calls `VacancyRepository.batch_update_vectors()` to write embeddings and set status to `VacancyStatus.VECTORIZED`.
+
 ## Database Schema
 
 **`Vacancy`** (current state of a job listing):
@@ -68,7 +73,7 @@ src/
 - Salary: `salary_from`, `salary_to` (optional)
 - HR info: `hr_name`, `hr_link` (optional)
 - Embeddings: `embedding` (1024‑dim vector, reserved for BGE‑M3)
-- Hashing & metadata: `external_id`, `identity_hash`, `content_hash` (optional), `status` (`VacancyStatus`), `created_at`
+- Hashing & metadata: `external_id`, `identity_hash`, `content_hash` (optional), `status` (`VacancyStatus`: `new` → `extracted` → `vectorized` → `analyzed` / `failed`), `created_at`
 - Snapshot link: `last_snapshot_id` → points to the latest `VacancySnapshot`; relationship `last_snapshot` / `snapshots` for history
 
 **`VacancySnapshot`** (versioned history of a vacancy’s description):
@@ -103,8 +108,9 @@ For local development, these are loaded from `.env` via `python-dotenv`.
 - [x] DOU scraper (fully implemented: first page + AJAX pagination, parser, DTOs)
 - [x] VacancyRepository with batch upsert & deduplication by `identity_hash`
 - [x] Djinni scraper client (parser implementation pending)
+- [x] BGE-M3 embedding pipeline: `brain/vectorizer.py` + `run_vectorizer.py` (EXTRACTED → VECTORIZED), `VacancyRepository.batch_update_vectors`
 - [ ] LLM Scoring engine (`brain/analyzer.py`)
-- [ ] BGE-M3 embedding generation and semantic search
+- [ ] Semantic search (pgvector queries on `embedding`)
 - [ ] LinkedIn scraper
 - [ ] Human-to-Human translation feature
 
@@ -122,7 +128,15 @@ For local development, these are loaded from `.env` via `python-dotenv`.
    docker-compose up --build
    ```
 
-The bot will:
-- Initialize the PostgreSQL database with pgvector extension
-- Create database tables
-- Run scrapers in a loop (currently fetches DOU vacancies every hour)
+The main bot (`main.py`) will:
+- Initialize the PostgreSQL database with pgvector extension and create tables
+- Run Phase 1 (Discovery) and Phase 2 (Deep extraction) in a loop every hour
+
+To populate embeddings (Phase 3), run the vectorizer worker separately (e.g. on a machine with GPU):
+
+```bash
+# From project root, with PYTHONPATH=src and DB reachable (e.g. port 5435 for local Postgres)
+python src/run_vectorizer.py
+```
+
+It processes vacancies with status `EXTRACTED`, computes BGE-M3 vectors, and sets them to `VECTORIZED`.
