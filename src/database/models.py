@@ -58,6 +58,23 @@ class Vacancy(Base):
         cascade="all, delete-orphan",
     )
 
+    # Relationships (Analysis)
+    last_analysis_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("vacancy_analyses.id", use_alter=True, name="fk_last_analysis"),
+        nullable=True
+    )
+    last_analysis: Mapped[Optional["VacancyAnalysis"]] = relationship(
+        "VacancyAnalysis",
+        foreign_keys=[last_analysis_id],
+        back_populates="current_for_vacancy",
+    )
+    analyses: Mapped[List["VacancyAnalysis"]] = relationship(
+        "VacancyAnalysis",
+        foreign_keys="[VacancyAnalysis.vacancy_id]",
+        back_populates="vacancy",
+        cascade="all, delete-orphan",
+    )
+
     # Relationships (Company)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
     company: Mapped["Company"] = relationship("Company", back_populates="vacancies")
@@ -109,15 +126,65 @@ class Vacancy(Base):
         SQLEnum(VacancyStatus), default=VacancyStatus.NEW, nullable=False, index=True
     )
 
-    # Reputation metrics
-    trust_score: Mapped[Optional[float]] = mapped_column(Float)  # 1.0 - 10.0
-    red_flags: Mapped[Optional[list]] = mapped_column(JSONB)  # Identified issues
-
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
 
     __table_args__ = (Index("ix_vacancy_attributes_gin", "attributes", postgresql_using="gin"),)
+
+
+class VacancyAnalysis(Base):
+    __tablename__ = "vacancy_analyses"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    
+    # Foreign key to vacancy
+    vacancy_id: Mapped[int] = mapped_column(
+        ForeignKey("vacancies.id", ondelete="CASCADE"), 
+        index=True,
+        nullable=False
+    )
+    
+    # Relationships
+    vacancy: Mapped["Vacancy"] = relationship(
+        "Vacancy", 
+        foreign_keys=[vacancy_id],
+        back_populates="analyses"
+    )
+    current_for_vacancy: Mapped[Optional["Vacancy"]] = relationship(
+        "Vacancy",
+        foreign_keys="[Vacancy.last_analysis_id]",
+        back_populates="last_analysis"
+    )
+
+    # Analysis results
+    trust_score: Mapped[int] = mapped_column(default=0)
+    red_flags: Mapped[list] = mapped_column(JSONB, server_default="[]", default=list) 
+    toxic_phrases: Mapped[list] = mapped_column(JSONB, server_default="[]", default=list)
+    
+    # Text conclusions
+    honest_summary: Mapped[str] = mapped_column(Text)
+    verdict: Mapped[str] = mapped_column(Text)
+    
+    # Model metadata
+    model_name: Mapped[str] = mapped_column(String)  # "gemini-1.5-pro", "gpt-4o"
+    provider: Mapped[str] = mapped_column(String)  # "google", "openai"
+    analysis_version: Mapped[str] = mapped_column(String, default="1.0")  # Prompt version
+    
+    # Performance metrics
+    confidence_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # 0.0 - 1.0
+    tokens_used: Mapped[Optional[int]] = mapped_column(nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    
+    # Status
+    is_current: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_vacancy_analysis_vacancy_created", "vacancy_id", "created_at"),
+        Index("ix_vacancy_analysis_trust_score", "trust_score"),
+    )
 
 
 class VacancySnapshot(Base):
