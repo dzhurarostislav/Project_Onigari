@@ -12,26 +12,26 @@ from scrapers.dou.client import DouScraper
 from scrapers.dou.parser import DouParser
 
 
-# 1. Централизованная настройка логов
+# Centralized logging configuration
 def setup_logging(level=logging.INFO):
     log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     logging.basicConfig(level=level, format=log_format, handlers=[logging.StreamHandler(sys.stdout)])
-    # Тихий режим для шумных библиотек
+    # Quiet mode for noisy libraries
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
     logging.getLogger("curl_cffi").setLevel(logging.WARNING)
 
 
-logger = logging.getLogger("onigari.main")
+logger = logging.getLogger(__name__)
 
 
 async def setup_database():
-    """Инициализация базы: расширения и таблицы"""
+    """Initialize database: extensions and tables."""
     try:
         async with engine.begin() as conn:
             await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
             logger.info("✅ PGVector extension is ready")
 
-            # ВНИМАНИЕ: в продакшене лучше использовать Alembic, но для старта — ок
+            # NOTE: Alembic is preferred for production, but this is fine for initial setup
             await conn.run_sync(Base.metadata.create_all)
             logger.info("✅ Database tables verified")
     except Exception as e:
@@ -40,13 +40,13 @@ async def setup_database():
 
 
 async def run_scrapers():
-    """Цикл сбора данных из внешних источников"""
+    """Cycle for gathering data from external sources."""
     async with async_session() as session:
         repository = VacancyRepository(session)
 
         async with DouScraper() as scraper:
             logger.info("📡 Scanning DOU for new opportunities...")
-            # Можно будет добавить список категорий из конфига
+            # TODO: Add category list from config
             async for batch in scraper.fetch_vacancies(category="Python"):
                 if not batch:
                     continue
@@ -57,22 +57,20 @@ async def run_scrapers():
 
 
 async def run_deep_extraction():
-    """Фаза 2: Глубокое потрошение вакансий (Extraction)"""
+    """Phase 2: Deep extraction (Full Page Scan)"""
     async with async_session() as session:
         repository = VacancyRepository(session)
-        # Нам нужны "руки" и "глаза" для кравлера
         async with DouScraper() as scraper:
             parser = DouParser()
 
             crawler = DetailCrawler(repository, scraper, parser)
 
             logger.info("🔪 Starting deep extraction of vacancy details...")
-            # Берем, например, 20 штук за раз
-            await crawler.crawl(limit=20)
+            await crawler.crawl(20)
 
 
 async def main():
-    setup_logging()  # Вызываем настройку логов первым делом
+    setup_logging()
     logger.info("👹 Project Onigari (鬼狩り) is waking up...")
 
     await setup_database()
@@ -85,7 +83,6 @@ async def main():
             await run_deep_extraction()
             logger.info("🏁 Full hunting cycle completed successfully.")
         except Exception as e:
-            # exc_info=True выведет весь traceback ошибки
             logger.error(f"⚠️ Scraper cycle failed: {e}", exc_info=True)
 
         logger.info("💤 Sleeping for 1 hour before next hunt...")

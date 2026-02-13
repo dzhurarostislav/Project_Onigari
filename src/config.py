@@ -15,20 +15,22 @@ DJINNI_CONFIG = ScraperConfig(
     user_agent=os.getenv("DJINNI_USER_AGENT", ""),
 )
 
-# 2. Database Config
-DB_USER = os.getenv("POSTGRES_USER", "ryugue")
+# В config.py
+DB_USER = os.getenv("POSTGRES_USER")
 DB_PASSWORD = os.getenv("POSTGRES_PASSWORD")
-DB_NAME = os.getenv("POSTGRES_DB", "onigari_db")
-DB_HOST = os.getenv("DB_HOST", "localhost")
-DB_PORT = os.getenv("DB_PORT", "5435")
+DB_NAME = os.getenv("POSTGRES_DB")
+DB_HOST = os.getenv("DB_HOST", "db") # Внутри докера это всегда 'db'
+DB_PORT = os.getenv("DB_PORT", "5432") # Внутри докера это всегда '5432'
 
-# Защита от дурака: если забыл пароль в .env, падаем сразу
-if not DB_PASSWORD:
-    raise ValueError("❌ CRITICAL: POSTGRES_PASSWORD is missing in .env")
+# Добавь проверку, что все переменные долетели
+if not all([DB_USER, DB_PASSWORD, DB_NAME]):
+    raise ValueError(f"❌ MISSING ENV: user={DB_USER}, pass={'***' if DB_PASSWORD else 'NONE'}, db={DB_NAME}")
 
-# Собираем строку подключения для SQLAlchemy
 DATABASE_URL = f"postgresql+asyncpg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
-# Для отладки (вывод в консоль только если включен ECHO, пароль скрываем)
+
+# Debug: print connection string with masked password if DB_ECHO is on
 if os.getenv("DB_ECHO", "False").lower() == "true":
     print(f"🔌 DB Connection: postgresql+asyncpg://{DB_USER}:***@{DB_HOST}:{DB_PORT}/{DB_NAME}")
+
+    

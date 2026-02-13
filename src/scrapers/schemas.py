@@ -4,18 +4,20 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
 from utils.hashing import generate_vacancy_identity_hash
 
-# --- Компании ---
+from database.enums import VacancyGrade
+
+# --- Companies ---
 
 
 class CompanyBaseDTO(BaseModel):
-    """Минимум информации из списка вакансий"""
+    """Basic company info from listings."""
 
     model_config = ConfigDict(from_attributes=True)
     name: str
 
 
 class CompanyFullDTO(CompanyBaseDTO):
-    """Полная информация из страницы вакансии или профиля компании"""
+    """Detailed company info from profile pages."""
 
     model_config = ConfigDict(from_attributes=True)
     dou_url: Optional[str] = None
@@ -23,24 +25,27 @@ class CompanyFullDTO(CompanyBaseDTO):
     tags: List[str] = Field(default_factory=list)
 
 
-# --- Вакансии ---
+# --- Vacancies ---
 
 
 class VacancyBaseDTO(BaseModel):
-    """Базовая вакансия (Listing)"""
+    """Basic vacancy info from listings."""
 
     model_config = ConfigDict(from_attributes=True)
 
     external_id: str
     title: str
-    url: HttpUrl
-    # Используем базовую версию компании
+    source_url: str = Field(..., description="Original URL of the vacancy")
+    # Use base version of the company
     company: CompanyBaseDTO
 
-    # Краткое описание из списка (snippet)
-    description: Optional[str] = None
+    # Short description from listing
+    short_description: Optional[str] = None
 
-    tech_stack: Dict[str, Any] = Field(default_factory=dict)
+    attributes: Dict[str, Any] = Field(default_factory=dict) # Formerly tech_stack
+    grade: Optional[VacancyGrade] = None
+    languages: Dict[str, str] = Field(default_factory=dict)
+    
     salary_from: Optional[float] = None
     salary_to: Optional[float] = None
 
@@ -49,20 +54,20 @@ class VacancyBaseDTO(BaseModel):
     @model_validator(mode="after")
     def generate_hashes(self) -> "VacancyBaseDTO":
         if not self.identity_hash:
-            # ИСПРАВЛЕНО: берем имя из вложенного объекта компании
+            # Fixed: using company name from nested object
             self.identity_hash = generate_vacancy_identity_hash(self.title, self.company.name)
         return self
 
 
 class VacancyDetailDTO(VacancyBaseDTO):
-    """Детальная вакансия (Full Page Scan)"""
+    """Detailed vacancy info from full page scan."""
 
     model_config = ConfigDict(from_attributes=True)
-    # ПЕРЕОПРЕДЕЛЯЕМ поле: здесь нам уже нужна полная компания с тегами
+    # Detailed company info with tags
     company: CompanyFullDTO
 
     full_description: str
     content_hash: str
 
     hr_name: Optional[str] = None
-    hr_link: Optional[str] = None
+    contacts: Dict[str, str] = Field(default_factory=dict)

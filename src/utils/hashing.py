@@ -8,7 +8,7 @@ def generate_vacancy_identity_hash(title: str, company: str) -> str:
     company: company name
     return: unique hashcode
     """
-    # Нормализуем: нижний регистр, убираем лишние пробелы
+    # Normalize: lowercase and strip whitespace
     raw_data = f"{title.lower().strip()}|{company.lower().strip()}"
     return hashlib.sha256(raw_data.encode()).hexdigest()
 

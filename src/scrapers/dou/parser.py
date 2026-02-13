@@ -6,7 +6,7 @@ from selectolax.lexbor import LexborHTMLParser
 from scrapers.schemas import CompanyBaseDTO, CompanyFullDTO, VacancyBaseDTO, VacancyDetailDTO
 from utils.hashing import generate_vacancy_content_hash
 
-logger = logging.getLogger("OnigariScraper")
+logger = logging.getLogger(__name__)
 
 
 class DouParser:
@@ -39,6 +39,7 @@ class DouParser:
 
             company_node = item.css_first("a.company")
             salary_node = item.css_first("span.salary")
+            desc_node = item.css_first(".sh-info")
 
             salary_from, salary_to = self._parse_dou_salary(salary_node.text(strip=True) if salary_node else None)
 
@@ -47,10 +48,10 @@ class DouParser:
                     external_id=external_id,
                     title=title_node.text(strip=True),
                     company=CompanyBaseDTO(name=company_node.text(strip=True) if company_node else "Unknown"),
-                    description=item.css_first(".sh-info").text(strip=True),
+                    short_description=desc_node.text(strip=True) if desc_node else None,
                     salary_from=salary_from,
                     salary_to=salary_to,
-                    url=url,
+                    source_url=url,
                 )
             )
         return vacancies
@@ -71,19 +72,17 @@ class DouParser:
         return None, None
 
     def parse_detail(self, html_content: str, base_dto: VacancyBaseDTO) -> VacancyDetailDTO:
-        """
-        Извлекает полное мясо вакансии со страницы через Selectolax.
-        """
+        """Extract full vacancy content via Selectolax."""
         parser = LexborHTMLParser(html_content)
 
-        # 1. Текст вакансии. На DOU это либо .vacancy-section, либо .b-typo
+        # Vacancy text usually in .vacancy-section or .b-typo
         desc_node = parser.css_first(".vacancy-section") or parser.css_first(".b-typo")
         full_description = desc_node.text(strip=True) if desc_node else ""
 
-        # 2. Генерируем content_hash для отслеживания изменений текста
+        # Generate content hash to track changes
         content_hash = generate_vacancy_content_hash(full_description)
 
-        # 3. Ищем данные HR-специалиста (блок .sh-info на детальной странице)
+        # Extract HR info
         hr_name = None
         hr_link = None
         hr_node = parser.css_first(".sh-info")
@@ -93,26 +92,22 @@ class DouParser:
             if name_node:
                 hr_name = name_node.text(strip=True)
 
-            # Ищем ссылку на профиль (обычно первая ссылка в этом блоке)
+            # Look for profile link
             link_node = hr_node.css_first("a")
             if link_node:
                 hr_link = link_node.attributes.get("href")
 
-        # 4. Собираем расширенный DTO
-        # Мы берем данные из базового DTO и дополняем их "мясом"
+        # Prepare contacts
+        contacts = {}
+        if hr_link:
+             contacts["profile_url"] = hr_link
+
+        # Build detailed DTO by spreading base fields and adding/overriding specific ones
         return VacancyDetailDTO(
-            # Распаковываем базовые поля
-            external_id=base_dto.external_id,
-            title=base_dto.title,
-            url=base_dto.url,
-            description=base_dto.description,
-            salary_from=base_dto.salary_from,
-            salary_to=base_dto.salary_to,
-            tech_stack=base_dto.tech_stack,
-            # Добавляем новые
+            **base_dto.model_dump(exclude={"company"}),
             company=CompanyFullDTO(name=base_dto.company.name),
             full_description=full_description,
             content_hash=content_hash,
             hr_name=hr_name,
-            hr_link=hr_link,
+            contacts=contacts,
         )

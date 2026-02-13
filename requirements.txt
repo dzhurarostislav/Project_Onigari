@@ -20,3 +20,5 @@ pgvector
 
 selectolax==0.3.21
 curl-cffi==0.7.1
+
+markdownify

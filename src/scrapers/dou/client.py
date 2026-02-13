@@ -21,7 +21,7 @@ class DouScraper(BaseScraper):
         self.parser = DouParser()
 
     def _get_csrf_token(self) -> str:
-        """Извлекает CSRF-токен из куков текущей сессии."""
+        """Extract CSRF token from current session cookies."""
         token = self._session.cookies.get("csrftoken")
         if not token:
             logger.error("❌ CSRF token not found in cookies!")
@@ -29,7 +29,7 @@ class DouScraper(BaseScraper):
         return token
 
     async def _fetch_more_via_ajax(self, category: str, count: int, csrf_token: str) -> dict:
-        """Выполняет POST-запрос для подгрузки новых вакансий."""
+        """POST request to load more vacancies via AJAX."""
         url = f"{self.base_url}xhr-load/?category={category}"
         payload = {"csrfmiddlewaretoken": csrf_token, "count": count}
 
@@ -54,52 +54,46 @@ class DouScraper(BaseScraper):
             return {}
 
     async def fetch_vacancies(self, category: str = "Python", **kwargs):
-        """
-        Асинхронный ГЕНЕРАТОР.
-        Вместо return list[...] мы делаем yield list[...].
-        """
-        # Шаг 1: Первая страница (всегда отдаем как есть)
+        """Async generator for vacancy batches."""
+        # Phase 1: Initial page
         main_url = f"{self.base_url}?category={category}"
         response = await self._session.get(main_url)
 
         if response.status_code == 200:
             first_batch = self.parser.parse_list(response.text)
             logger.info(f"✨ First page parsed: {len(first_batch)} vacancies")
-            yield first_batch  # <--- Отдаем первую пачку сразу
+            yield first_batch
         else:
             return
 
-        # Шаг 2: AJAX цикл
+        # Phase 2: AJAX loop
         count = 20
         while True:
             try:
                 await self._random_pause()
 
-                # Токен может обновиться, берем свежий
+                # CSRF token can be refreshed
                 current_token = self._get_csrf_token()
 
-                # Запрос
                 data = await self._fetch_more_via_ajax(category, count, current_token)
 
                 if not data or not data.get("html"):
                     logger.info("💨 Response is empty or no HTML.")
                     break
 
-                # Парсинг
                 new_batch = self.parser.parse_list(data.get("html", ""))
                 if not new_batch:
                     break
 
                 logger.info(f"✨ Yielding batch of {len(new_batch)} items (offset {count})")
-                yield new_batch  # <--- Отдаем следующую пачку
+                yield new_batch
 
                 if data.get("last") is True:
                     logger.info("🏁 Server said: last=true.")
                     break
 
-                # ИСПРАВЛЕНИЕ ЛОГИКИ:
-                # Сервер возвращает поле 'num', которое говорит, сколько он отдал.
-                # Обычно это 40. Мы должны шагать на это число, чтобы не топтаться на месте.
+                # Server returns 'num' field indicating how many items were sent (usually 40).
+                # Use it as offset step to avoid duplicates.
                 step = data.get("num", 40)
                 count += step
 
@@ -108,14 +102,10 @@ class DouScraper(BaseScraper):
                 break
 
     async def fetch_page_html(self, url: str) -> Optional[str]:
-        """
-        Универсальный метод для скачивания HTML.
-        Отвечает только за сеть: заголовки, куки, обход защиты.
-        """
+        """Generic HTML fetch method handling headers and cookies."""
         try:
             safe_url = str(url)
             logger.info(f"📡 Hunting for content at: {url}")
-            # Мы используем ту же сессию с теми же куками и заголовками
             response = await self._session.get(safe_url)
 
             if response.status_code == 200:
