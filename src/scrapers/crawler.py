@@ -41,5 +41,5 @@ class DetailCrawler:
                 # Random delay
                 await asyncio.sleep(random.uniform(2, 5))
 
-            except Exception as e:
+            except Exception:
                 continue

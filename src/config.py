@@ -1,13 +1,16 @@
 import os
 from dataclasses import dataclass
+
 from dotenv import load_dotenv
 
 load_dotenv()
+
 
 @dataclass(frozen=True)
 class ScraperConfig:
     cookies: str
     user_agent: str
+
 
 # 1. Scraper Configs
 DJINNI_CONFIG = ScraperConfig(
@@ -19,8 +22,8 @@ DJINNI_CONFIG = ScraperConfig(
 DB_USER = os.getenv("POSTGRES_USER")
 DB_PASSWORD = os.getenv("POSTGRES_PASSWORD")
 DB_NAME = os.getenv("POSTGRES_DB")
-DB_HOST = os.getenv("DB_HOST", "db") # Внутри докера это всегда 'db'
-DB_PORT = os.getenv("DB_PORT", "5432") # Внутри докера это всегда '5432'
+DB_HOST = os.getenv("DB_HOST", "db")  # Внутри докера это всегда 'db'
+DB_PORT = os.getenv("DB_PORT", "5432")  # Внутри докера это всегда '5432'
 
 # Добавь проверку, что все переменные долетели
 if not all([DB_USER, DB_PASSWORD, DB_NAME]):
@@ -32,5 +35,3 @@ DATABASE_URL = f"postgresql+asyncpg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT
 # Debug: print connection string with masked password if DB_ECHO is on
 if os.getenv("DB_ECHO", "False").lower() == "true":
     print(f"🔌 DB Connection: postgresql+asyncpg://{DB_USER}:***@{DB_HOST}:{DB_PORT}/{DB_NAME}")
-
-    

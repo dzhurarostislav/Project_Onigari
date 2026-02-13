@@ -31,7 +31,8 @@ src/
 ├── run_vectorizer.py    # Standalone worker: EXTRACTED → BGE-M3 embeddings → VECTORIZED
 ├── config.py            # Configuration management (scraper configs, env)
 ├── database/
-│   ├── models.py        # SQLAlchemy models: Vacancy, VacancySnapshot, Company, Tag; pgvector, JSONB, statuses, hashing
+│   ├── enums.py         # Shared enums: VacancyStatus, SalaryPeriod, WorkFormat, etc.
+│   ├── models.py        # SQLAlchemy models: Vacancy, VacancySnapshot, Company, Tag, SocialSignal, UserInteraction; pgvector, JSONB, statuses, hashing
 │   ├── service.py       # VacancyRepository: upsert, deep-extraction, snapshot updates, batch_update_vectors
 │   └── sessions.py      # Async database engine and session factory
 ├── scrapers/
@@ -67,13 +68,15 @@ src/
 ## Database Schema
 
 **`Vacancy`** (current state of a job listing):
-- Basic info: `title`, `description`, `url`
+- Basic info: `title`, `short_description` (listing snippet), `description` (full text), `source_url`
 - Company link: `company_id` → `Company`
-- Tech stack: `tech_stack` (JSONB) with a GIN index for flexible search/filtering
-- Salary: `salary_from`, `salary_to` (optional)
-- HR info: `hr_name`, `hr_link` (optional)
-- Embeddings: `embedding` (1024‑dim vector, reserved for BGE‑M3)
-- Hashing & metadata: `external_id`, `identity_hash`, `content_hash` (optional), `status` (`VacancyStatus`: `new` → `extracted` → `vectorized` → `analyzed` / `failed`), `created_at`
+- Attributes: `attributes` JSONB (tech stack, grade, seniority, etc.) with a GIN index for flexible search/filtering
+- Salary: `salary_from`, `salary_to`, `salary_currency`, `salary_period`, `is_gross`
+- Job terms: `work_format`, `employment_type`, `grade`, `languages`, `experience_min`, `requires_own_equipment`
+- Location: `location_city`, `location_address`, `geo_lat`, `geo_lon`, `is_relocation_possible`
+- HR & contacts: `hr_name`, `contacts` JSONB (email, Telegram, etc.)
+- Embeddings: `embedding` (1024‑dim vector for BGE‑M3)
+- Hashing & metadata: `external_id`, `identity_hash`, `content_hash` (optional), `status` (`VacancyStatus`: `new` → `extracted` → `vectorized` → `analyzed` / `archived` / `failed`), `created_at`, `updated_at`, `is_active`
 - Snapshot link: `last_snapshot_id` → points to the latest `VacancySnapshot`; relationship `last_snapshot` / `snapshots` for history
 
 **`VacancySnapshot`** (versioned history of a vacancy’s description):
@@ -82,12 +85,21 @@ src/
 - Used to track changes over time; each vacancy can have many snapshots and one current “last” snapshot
 
 **`Company`**:
-- Core info: `name`, `description`, `dou_url`
-- Relations: `vacancies` (one-to-many), `tags` (many-to-many via `company_tags`)
+- Core info: `name`, `slug`, `description`, `website_url`
+- Reputation: `overall_rating`, `is_blacklisted`, `is_verified`, `industry`, `size_range`
+- Relations: `vacancies` (one-to-many), `tags` (many-to-many via `company_tags`), `signals` (one-to-many `SocialSignal`)
 
 **`Tag`**:
-- Core info: `name`
+- Core info: `name`, `category`
 - Relations: `companies` (many-to-many via `company_tags`)
+
+**`SocialSignal`**:
+- Links external reviews/posts to a company (`company_id`, `source`, `source_url`, `content`)
+- Analytics: `sentiment_score`, `is_verified`, `embedding` (for semantic search)
+
+**`UserInteraction`**:
+- Tracks user actions on vacancies: `status` (`UserInteractionStatus`), `notes`
+- Links to `Vacancy` via `vacancy_id`
 
 ## Configuration
 The project uses environment variables for configuration:
@@ -103,7 +115,7 @@ For local development, these are loaded from `.env` via `python-dotenv`.
 ## Project Progress
 - [x] Docker infrastructure with PostgreSQL + pgvector
 - [x] Database schema & pgvector extension setup
-- [x] Vacancy model with JSONB tech stack, hashing, parsing status, HR fields, embedding field; `VacancySnapshot` for description history
+- [x] Vacancy model with JSONB attributes, rich job metadata, hashing, statuses, HR fields, embedding field; `VacancySnapshot` for description history
 - [x] Base scraper architecture with async session management
 - [x] DOU scraper (fully implemented: first page + AJAX pagination, parser, DTOs)
 - [x] VacancyRepository with batch upsert & deduplication by `identity_hash`

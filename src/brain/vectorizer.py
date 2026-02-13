@@ -13,7 +13,7 @@ class VacancyVectorizer:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         logger.info(f"🧠 Loading {model_name} on {self.device}...")
         self.model = SentenceTransformer(model_name, device=self.device, model_kwargs={"torch_dtype": torch.float16})
-        self.model.max_seq_length = 1024 
+        self.model.max_seq_length = 1024
         logger.info(f"📏 Max sequence length set to {self.model.max_seq_length}")
 
     def _clean_text(self, text: str) -> str:
@@ -29,10 +29,10 @@ class VacancyVectorizer:
         title = vacancy.title or ""
         company = vacancy.company.name if vacancy.company else ""
         raw_desc = (
-            vacancy.description or 
-            (vacancy.last_snapshot.full_description if vacancy.last_snapshot else None) or 
-            vacancy.short_description or 
-            ""
+            vacancy.description
+            or (vacancy.last_snapshot.full_description if vacancy.last_snapshot else None)
+            or vacancy.short_description
+            or ""
         )
         desc = self._clean_text(raw_desc)
         return f"Represent this vacancy for retrieval; Title: {title}; Company: {company}; Description: {desc}"

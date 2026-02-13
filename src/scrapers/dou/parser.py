@@ -100,7 +100,7 @@ class DouParser:
         # Prepare contacts
         contacts = {}
         if hr_link:
-             contacts["profile_url"] = hr_link
+            contacts["profile_url"] = hr_link
 
         # Build detailed DTO by spreading base fields and adding/overriding specific ones
         return VacancyDetailDTO(

@@ -1,10 +1,9 @@
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
-
-from utils.hashing import generate_vacancy_identity_hash
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from database.enums import VacancyGrade
+from utils.hashing import generate_vacancy_identity_hash
 
 # --- Companies ---
 
@@ -42,10 +41,10 @@ class VacancyBaseDTO(BaseModel):
     # Short description from listing
     short_description: Optional[str] = None
 
-    attributes: Dict[str, Any] = Field(default_factory=dict) # Formerly tech_stack
+    attributes: Dict[str, Any] = Field(default_factory=dict)  # Formerly tech_stack
     grade: Optional[VacancyGrade] = None
     languages: Dict[str, str] = Field(default_factory=dict)
-    
+
     salary_from: Optional[float] = None
     salary_to: Optional[float] = None
 
