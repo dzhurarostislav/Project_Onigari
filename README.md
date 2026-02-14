@@ -1,4 +1,4 @@
-# Project Onigari (鬼狩り) 👹
+# Project Onigari (鬼狩り)
 
 <p align="center">
   <img src="鬼狩り.png" width="400" alt="Project Onigari Logo - Demon Hunter tool for job analysis">
@@ -30,11 +30,12 @@ This project aggregates vacancies from various job platforms and analyzes them t
 src/
 ├── main.py              # Entry point - orchestrates discovery & deep extraction cycles
 ├── run_vectorizer.py    # Standalone worker: EXTRACTED → BGE-M3 embeddings → VECTORIZED
-├── config.py            # Configuration management (scraper configs, env)
+├── run_llm_requests.py  # Standalone worker: VECTORIZED/STRUCTURED → Stage 1 (optional) + Stage 2 → ANALYZED
+├── config.py            # Configuration (DB, scraper configs, GEMINI_API_KEY, stage models)
 ├── database/
-│   ├── enums.py         # Shared enums: VacancyStatus, SalaryPeriod, WorkFormat, etc.
-│   ├── models.py        # SQLAlchemy models: Vacancy, VacancySnapshot, Company, Tag, SocialSignal, UserInteraction; pgvector, JSONB, statuses, hashing
-│   ├── service.py       # VacancyRepository: upsert, deep-extraction, snapshot updates, batch_update_vectors
+│   ├── enums.py         # Shared enums: VacancyStatus, SalaryPeriod, WorkFormat, VacancyGrade, etc.
+│   ├── models.py        # SQLAlchemy models: Vacancy, VacancySnapshot, VacancyAnalysis, Company, Tag, SocialSignal, UserInteraction; pgvector, JSONB, statuses, hashing
+│   ├── service.py       # VacancyRepository: upsert, deep-extraction, snapshot updates, batch_update_vectors, save_stage1_result, save_stage2_result, get_vacancies_for_llm_processing
 │   └── sessions.py      # Async database engine and session factory
 ├── scrapers/
 │   ├── base.py          # BaseScraper: shared async HTTP/session logic
@@ -50,6 +51,7 @@ src/
 │   ├── README.md        # Two-stage analysis pipeline docs
 │   ├── interfaces.py    # Abstract LLMProvider contract
 │   ├── providers.py     # GeminiProvider (planned: OpenAI, Anthropic)
+│   ├── context.py       # tokens_counter (ContextVar) for token usage tracking across stages
 │   ├── exceptions.py    # AnalysisError, ProviderError, ValidationError, RateLimitError, ContentFilterError
 │   ├── schemas.py       # Pydantic: VacancyStructuredData, VacancyJudgment, VacancyAnalysisResult
 │   ├── prompts.py       # System/user prompts for Stage 1 (Investigator) & Stage 2 (Demon Hunter)
@@ -73,8 +75,8 @@ src/
 - **Phase 3 – Vectorization (optional worker)**:  
   `run_vectorizer.py` runs as a separate process: it loads `VacancyVectorizer` (BGE-M3 via `sentence-transformers`), fetches vacancies with status `EXTRACTED`, encodes title + company + full description (from `last_snapshot` or `description`), and calls `VacancyRepository.batch_update_vectors()` to write embeddings and set status to `VacancyStatus.VECTORIZED`.
 
-- **Phase 4 – LLM analysis (optional)**:  
-  For vacancies with status `EXTRACTED` or `VECTORIZED`, `VacancyAnalyzer` (see `src/brain/`) runs a two-stage pipeline: **Stage 1 (Investigator)** extracts structured data (tech stack, grade, salary, red-flag keywords); **Stage 2 (Demon Hunter)** produces a trust score (1–10), red flags, toxic phrases, honest summary, and verdict (Safe/Risky/Avoid). Results are stored in `VacancyAnalysis`; vacancy status can be set to `VacancyStatus.ANALYZED` and linked via `last_analysis_id`.
+- **Phase 4 – LLM analysis (optional worker)**:  
+  `run_llm_requests.py` runs as a separate process: it fetches vacancies with status `VECTORIZED` or `STRUCTURED` via `VacancyRepository.get_vacancies_for_llm_processing()`. For each vacancy: if `VECTORIZED`, it runs **Stage 1 (Investigator)** to extract structured data, then `save_stage1_result()` updates attributes and sets status to `STRUCTURED`; if already `STRUCTURED`, it reuses `Vacancy.to_structured_data()`. **Stage 2 (Demon Hunter)** then runs for all; `save_stage2_result()` creates a `VacancyAnalysis` record and sets status to `ANALYZED`. Status flow: `new` → `extracted` → `vectorized` → `structured` (after Stage 1) → `analyzed` (after Stage 2).
 
 ## Database Schema
 
@@ -87,7 +89,7 @@ src/
 - Location: `location_city`, `location_address`, `geo_lat`, `geo_lon`, `is_relocation_possible`
 - HR & contacts: `hr_name`, `contacts` JSONB (email, Telegram, etc.)
 - Embeddings: `embedding` (1024‑dim vector for BGE‑M3)
-- Hashing & metadata: `external_id`, `identity_hash`, `content_hash` (optional), `status` (`VacancyStatus`: `new` → `extracted` → `vectorized` → `analyzed` / `archived` / `failed`), `created_at`, `updated_at`, `is_active`
+- Hashing & metadata: `external_id`, `identity_hash`, `content_hash` (optional), `status` (`VacancyStatus`: `new` → `extracted` → `vectorized` → `structured` → `analyzed` / `archived` / `failed`), `created_at`, `updated_at`, `is_active`
 - Snapshot link: `last_snapshot_id` → points to the latest `VacancySnapshot`; relationship `last_snapshot` / `snapshots` for history
 - Analysis link: `last_analysis_id` → points to the latest `VacancyAnalysis`; relationship `last_analysis` / `analyses` for AI verdict history
 
@@ -95,11 +97,11 @@ src/
 - Links to `Vacancy` via `vacancy_id`; vacancy has `last_analysis` / `analyses`
 - Judgment: `trust_score` (0–10), `red_flags`, `toxic_phrases`, `honest_summary`, `verdict`
 - Metadata: `model_name`, `provider`, `analysis_version`, `confidence_score`, `tokens_used`, `error_message`
-- Timestamp: `created_at`; `is_current` for latest run per vacancy
+- Timestamp: `created_at`; `is_current` marks the latest run per vacancy (others reset when a new analysis is saved)
 
 **`VacancySnapshot`** (versioned history of a vacancy’s description):
 - `vacancy_id` → `Vacancy`
-- `full_description`, `content_hash`, `created_at`
+- `full_description`, `raw_json` (JSONB, optional), `content_hash`, `created_at`
 - Used to track changes over time; each vacancy can have many snapshots and one current “last” snapshot
 
 **`Company`**:
@@ -121,29 +123,26 @@ src/
 
 ## Configuration
 The project uses environment variables for configuration:
-- `DATABASE_URL` - PostgreSQL connection string (or `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `DB_HOST`, `DB_PORT` for async URL)
-- `DOU_COOKIES` - Browser cookies for DOU.ua scraping
-- `DOU_USER_AGENT` - User agent string for DOU requests
-- `DJINNI_COOKIES` - Browser cookies for Djinni.co scraping
-- `DJINNI_USER_AGENT` - User agent string for Djinni requests
-- `DB_ECHO` - Enable SQL echo in logs when set to `"True"`
-- **Brain (LLM):** Pass a Google AI API key when creating `GeminiProvider(api_key="...")`; you can use `GOOGLE_AI_API_KEY` from env for local runs.
+- **Database:** `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `DB_HOST` (default `db`), `DB_PORT` (default `5432`) — combined into async `DATABASE_URL` in `config.py`. Set `DB_ECHO=True` to log SQL.
+- **Scrapers:** `DOU_COOKIES`, `DOU_USER_AGENT` (DOU.ua); `DJINNI_COOKIES`, `DJINNI_USER_AGENT` (Djinni.co).
+- **Brain (LLM):** `GEMINI_API_KEY` or `GOOGLE_API_KEY` (required for Phase 4); `GEMINI_STAGE1_MODEL` (default `gemini-1.5-flash`), `GEMINI_STAGE2_MODEL` (default `gemini-1.5-flash`). `Config.validate()` checks that the API key is set.
 
-For local development, these are loaded from `.env` via `python-dotenv`.
+For local development, variables are loaded from `.env` via `python-dotenv`.
 
 ## Project Progress
 - [x] Docker infrastructure with PostgreSQL + pgvector
 - [x] Database schema & pgvector extension setup
-- [x] Vacancy model with JSONB attributes, rich job metadata, hashing, statuses, HR fields, embedding field; `VacancySnapshot` for description history; `VacancyAnalysis` and `last_analysis` for LLM results
+- [x] Vacancy model with JSONB attributes, rich job metadata, hashing, statuses (including `STRUCTURED`), HR fields, embedding field; `VacancySnapshot` (with `raw_json`) for description history; `VacancyAnalysis` and `last_analysis` for LLM results
 - [x] Base scraper architecture with async session management
 - [x] DOU scraper (fully implemented: first page + AJAX pagination, parser, DTOs)
 - [x] VacancyRepository with batch upsert & deduplication by `identity_hash`
 - [x] Djinni scraper client (parser implementation pending)
 - [x] BGE-M3 embedding pipeline: `brain/vectorizer.py` + `run_vectorizer.py` (EXTRACTED → VECTORIZED), `VacancyRepository.batch_update_vectors`
 - [x] LLM analysis pipeline: two-stage brain (Investigator + Demon Hunter), Gemini provider, Pydantic schemas, few-shot learning; trust score, red flags, honest summary, verdict → `VacancyAnalysis`
+- [x] Phase 4 worker: `run_llm_requests.py` (VECTORIZED/STRUCTURED → Stage 1 + Stage 2 → ANALYZED), `save_stage1_result` / `save_stage2_result`, `get_vacancies_for_llm_processing`; token tracking via `brain/context.py`; config `GEMINI_API_KEY`, `GEMINI_STAGE1_MODEL`, `GEMINI_STAGE2_MODEL`
 - [ ] Semantic search (pgvector queries on `embedding`)
 - [ ] LinkedIn scraper
-- [ ] Optional: OpenAI/Anthropic providers, token usage tracking, retry/backoff
+- [ ] Optional: OpenAI/Anthropic providers, retry/backoff (Gemini already has rate-limit retry)
 
 ## Getting Started
 
@@ -172,4 +171,11 @@ python src/run_vectorizer.py
 
 It processes vacancies with status `EXTRACTED`, computes BGE-M3 vectors, and sets them to `VECTORIZED`.
 
-To run the LLM analysis pipeline (Phase 4), use `VacancyAnalyzer` from `brain.analyzer` with a `GeminiProvider`; see **`src/brain/README.md`** for usage, schemas, and status flow (e.g. EXTRACTED/VECTORIZED → ANALYZED, results in `VacancyAnalysis`).
+To run the LLM analysis pipeline (Phase 4), set `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) in `.env`, then run the standalone worker:
+
+```bash
+# From project root, with PYTHONPATH=src and DB reachable (e.g. port 5432 for local Postgres)
+python src/run_llm_requests.py
+```
+
+It processes vacancies with status `VECTORIZED` or `STRUCTURED`, runs Stage 1 (if needed) and Stage 2, and writes results to `VacancyAnalysis` with status `ANALYZED`. For programmatic use (e.g. single-vacancy analysis with custom `user_role`), see **`src/brain/README.md`**.

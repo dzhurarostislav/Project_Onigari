@@ -4,8 +4,9 @@ import enum
 class VacancyStatus(enum.Enum):
     NEW = "new"
     EXTRACTED = "extracted"
-    ANALYZED = "analyzed"
     VECTORIZED = "vectorized"
+    STRUCTURED = "structured"
+    ANALYZED = "analyzed"
     ARCHIVED = "archived"
     FAILED = "failed"
 

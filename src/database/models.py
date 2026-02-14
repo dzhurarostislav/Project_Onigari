@@ -6,6 +6,7 @@ from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Index, Stri
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from brain.schemas import VacancyStructuredData
 
 from database.enums import (
     EmploymentType,
@@ -131,6 +132,16 @@ class Vacancy(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
 
     __table_args__ = (Index("ix_vacancy_attributes_gin", "attributes", postgresql_using="gin"),)
+
+    def to_structured_data(self):
+        return VacancyStructuredData(
+            tech_stack=self.attributes.get("tech_stack", []),
+            benefits=self.attributes.get("benefits", []),
+            red_flag_keywords=self.attributes.get("red_flag_keywords", []),
+            domain=self.attributes.get("domain"),
+            grade=self.grade,
+            salary_parse=None
+        )
 
 
 class VacancyAnalysis(Base):

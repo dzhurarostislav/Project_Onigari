@@ -8,9 +8,15 @@ Future providers: OpenAI, Anthropic, local models.
 import logging
 from typing import Type, TypeVar
 
-import google.generativeai as genai
+from functools import wraps
+import asyncio
+
+from google import genai
+from google.genai import types, errors
+
 from pydantic import BaseModel
 
+from brain.context import tokens_counter
 from brain.exceptions import ProviderError, RateLimitError, ValidationError
 from brain.interfaces import LLMProvider
 
@@ -18,14 +24,28 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
+def retry_on_rate_limit(retries: int = 3, base_delay: float = 5.0):
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            for attempt in range(retries):
+                try:
+                    return await func(*args, **kwargs)
+                except errors.ClientError as e:
+                    if "429" in str(e) or "quota" in str(e).lower():
+                        # Для 15 RPM задержка в 5-10 секунд — это глоток воздуха
+                        wait_time = base_delay * (attempt + 1) 
+                        logger.warning(f"⏳ Лимит (15 RPM). Ждем {wait_time}с... (Попытка {attempt + 1})")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    raise e
+            return await func(*args, **kwargs)
+        return wrapper
+    return decorator
 
 class GeminiProvider(LLMProvider):
     """
     Google Gemini implementation with native JSON schema support.
-    
-    Uses Gemini's 'response_schema' feature for bulletproof structured output.
-    No need for manual JSON parsing or retry logic - the model is forced to
-    return valid JSON matching the Pydantic schema.
     """
 
     def __init__(self, api_key: str, model_name: str = "gemini-1.5-flash"):
@@ -36,7 +56,7 @@ class GeminiProvider(LLMProvider):
             api_key: Google AI API key
             model_name: Model to use (default: gemini-1.5-flash for speed/cost)
         """
-        genai.configure(api_key=api_key)
+        self.client = genai.Client(api_key=api_key)
         self._model_name = model_name
         logger.info(f"Initialized GeminiProvider with model: {model_name}")
 
@@ -49,7 +69,8 @@ class GeminiProvider(LLMProvider):
     def provider_name(self) -> str:
         """Return the provider name."""
         return "google"
-
+    
+    @retry_on_rate_limit(retries=3, base_delay=60.0)
     async def analyze(
         self, 
         user_prompt: str, 
@@ -58,15 +79,10 @@ class GeminiProvider(LLMProvider):
     ) -> T:
         """
         Analyze text using Gemini with strict JSON schema validation.
-        
-        Args:
-            user_prompt: The main input content
-            system_instruction: The persona/rules for this specific task
-            schema: Pydantic model class to enforce output structure
-            
+
         Returns:
             Validated Pydantic object
-            
+
         Raises:
             ProviderError: If API call fails
             ValidationError: If response doesn't match schema
@@ -76,33 +92,46 @@ class GeminiProvider(LLMProvider):
             # Initialize model with task-specific persona
             # We create a new model instance for each call because
             # system_instruction changes between stages (Investigator vs Demon Hunter)
-            model = genai.GenerativeModel(
-                model_name=self._model_name,
-                system_instruction=system_instruction
-            )
-
-            # Configure strict JSON output with schema validation
-            generation_config = genai.GenerationConfig(
+            config = types.GenerateContentConfig(
+                system_instruction=system_instruction,
                 response_mime_type="application/json",
-                response_schema=schema
+                response_schema=schema,
+                safety_settings=[
+                    types.SafetySetting(
+                        category="HARM_CATEGORY_HARASSMENT",
+                        threshold="BLOCK_NONE"
+                    ),
+                    types.SafetySetting(
+                        category="HARM_CATEGORY_HATE_SPEECH",
+                        threshold="BLOCK_NONE"
+                    ),
+                    types.SafetySetting(
+                        category="HARM_CATEGORY_DANGEROUS_CONTENT",
+                        threshold="BLOCK_NONE"
+                    ),
+                    types.SafetySetting(
+                        category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                        threshold="BLOCK_NONE"
+                    ),
+                ]
             )
-
-            # Safety settings: Allow analysis of potentially toxic content
-            # We MUST analyze aggressive/manipulative vacancy text without being blocked
-            safety_settings = [
-                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-            ]
 
             logger.debug(f"Calling Gemini API with schema: {schema.__name__}")
 
             # Generate content asynchronously
-            response = await model.generate_content_async(
-                user_prompt,
-                generation_config=generation_config,
-                safety_settings=safety_settings
+            response = await self.client.aio.models.generate_content(
+                model=self._model_name,
+                contents=user_prompt,
+                config=config
+            )
+
+            usage = response.usage_metadata
+            total_tokens = usage.total_token_count if usage else 0
+            tokens_counter.set(tokens_counter.get() + total_tokens)
+            logger.info(
+                f"📊 Расход: Prompt={usage.prompt_token_count}, "
+                f"Candidates={usage.candidates_token_count}, "
+                f"Total={usage.total_token_count}"
             )
 
             # Validate and return Pydantic object
@@ -112,28 +141,22 @@ class GeminiProvider(LLMProvider):
             logger.debug(f"Successfully validated response as {schema.__name__}")
             return result
 
-        except genai.types.generation_types.BlockedPromptException as e:
-            logger.error(f"Content blocked by safety filters: {e}")
-            raise ProviderError(f"Content blocked by Gemini safety filters: {e}")
 
-        except genai.types.generation_types.StopCandidateException as e:
-            logger.error(f"Generation stopped: {e}")
-            raise ProviderError(f"Gemini stopped generation: {e}")
+        except errors.ClientError as e:
+            # Ловит 4xx ошибки (включая 429 Rate Limit)
+            err_msg = str(e).lower()
+            if "429" in err_msg or "quota" in err_msg:
+                raise RateLimitError(f"Gemini Rate Limit: {e}")
+            raise ProviderError(f"Gemini Client Error: {e}")
+
+        except errors.APIError as e:
+            # Ловит 5xx ошибки сервера
+            raise ProviderError(f"Gemini Server Failure: {e}")
 
         except Exception as e:
-            # Check if it's a rate limit error
-            if "quota" in str(e).lower() or "rate limit" in str(e).lower():
-                logger.error(f"Rate limit exceeded: {e}")
-                raise RateLimitError(f"Gemini API rate limit exceeded: {e}")
-            
-            # Check if it's a validation error
             if "validation" in str(e).lower():
-                logger.error(f"Schema validation failed: {e}")
-                raise ValidationError(f"Response doesn't match schema {schema.__name__}: {e}")
-            
-            # Generic provider error
-            logger.error(f"Gemini API error: {e}", exc_info=True)
-            raise ProviderError(f"Gemini API call failed: {e}")
+                raise ValidationError(f"Schema mismatch: {e}")
+            raise ProviderError(f"Unexpected failure: {e}")
 
 
 # Future providers can be added here following the same interface:

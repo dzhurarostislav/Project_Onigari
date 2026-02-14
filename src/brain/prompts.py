@@ -15,7 +15,7 @@ Follow these instructions carefully:
 
 1. Tech Stack: Identify all programming languages, frameworks, databases, and tools. Return them as a clean list of strings (e.g., use 'PostgreSQL' instead of 'Postgres', 'Python' instead of 'python3').
 
-2. Grade/Seniority: Infer from title and requirements. Use exactly one of: Junior, Middle, Senior, Lead, or Intern.
+2. Grade/Seniority: Infer from title and requirements. Use exactly one of: junior, middle, senior, lead, principal, or intern.
 
 3. Domain: Identify the company's business area (FinTech, Crypto, E-commerce, Gamedev, EdTech, etc.). Return null if unclear.
 

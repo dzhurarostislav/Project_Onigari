@@ -1,6 +1,8 @@
 from enum import Enum
 from typing import List, Optional
 
+from database.enums import VacancyGrade
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -18,14 +20,7 @@ class Currency(str, Enum):
     GBP = "GBP"
 
 
-class Grade(str, Enum):
-    """Seniority levels."""
 
-    JUNIOR = "Junior"
-    MIDDLE = "Middle"
-    SENIOR = "Senior"
-    LEAD = "Lead"
-    INTERN = "Intern"
 
 
 # --- STAGE 1: THE AUTOPSY (Structured Data Extraction) ---
@@ -55,7 +50,7 @@ class VacancyStructuredData(BaseModel):
         default_factory=list,
         description="List of technologies mentioned (e.g., ['Python', 'Django', 'PostgreSQL']).",
     )
-    grade: Grade = Field(description="Seniority level.")
+    grade: VacancyGrade = Field(description="Seniority level.")
     domain: Optional[str] = Field(None, description="Company domain (FinTech, Crypto, Gamedev, etc.).")
 
     salary_parse: Optional[SalaryData] = Field(None, description="Parsed salary info if found in text.")

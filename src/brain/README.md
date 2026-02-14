@@ -38,12 +38,13 @@ Vacancy → Stage 1: Investigator → Stage 2: Demon Hunter → VacancyAnalysis 
 ## Files
 
 - **`interfaces.py`** - Abstract LLM provider contract
-- **`providers.py`** - LLM provider implementations (Gemini, future: OpenAI, Anthropic)
+- **`providers.py`** - LLM provider implementations (Gemini with retry on rate limit; future: OpenAI, Anthropic)
 - **`exceptions.py`** - Custom exception hierarchy for error handling
-- **`schemas.py`** - Pydantic DTOs for all stages
+- **`schemas.py`** - Pydantic DTOs for all stages (`VacancyGrade` from `database.enums` for Stage 1 grade)
 - **`prompts.py`** - System and user prompts for LLM calls
 - **`few_shots.py`** - Few-shot examples for Stage 2 (The Demon Hunter)
-- **`analyzer.py`** - Analysis orchestration logic
+- **`analyzer.py`** - Analysis orchestration: `analyze_stage1`, `analyze_stage2`, and `analyze_vacancy` (full pipeline)
+- **`context.py`** - `tokens_counter` (ContextVar) for tracking token usage across stages in the current run
 - **`vectorizer.py`** - Embedding generation for semantic search
 
 ## Usage Example
@@ -89,6 +90,28 @@ db_data = result.to_db_dict()
 analysis = VacancyAnalysis(vacancy_id=vacancy_dict["id"], **db_data)
 session.add(analysis)
 ```
+
+### Running stages independently
+
+You can run Stage 1 and Stage 2 separately (e.g. to retry only Stage 2 or to reuse Stage 1 output):
+
+```python
+from brain.context import tokens_counter
+
+# Stage 1 only — extract structured data
+structured_data = await analyzer.analyze_stage1(vacancy_dict)
+
+# Stage 2 only — pass Stage 1 output; returns full VacancyAnalysisResult
+result = await analyzer.analyze_stage2(
+    vacancy_dict,
+    structured_data,
+    user_role="Python/LLM Engineer"
+)
+# Set tokens from context if you need them (full pipeline does this automatically)
+result.tokens_used = tokens_counter.get()
+```
+
+The full pipeline `analyze_vacancy(vacancy_dict, user_role)` is a convenience wrapper that runs Stage 1 then Stage 2 and fills `result.tokens_used` from the shared `tokens_counter` context.
 
 ### Processing Pipeline Integration
 
@@ -181,8 +204,10 @@ Update `few_shots.py` as you discover new toxic patterns.
 The system provides granular exception handling:
 - `ProviderError` - API failures (including safety filter blocks; see below)
 - `ValidationError` - Schema validation failures
-- `RateLimitError` - API rate limiting
+- `RateLimitError` - API rate limiting (Gemini provider retries with backoff before raising)
 - `ContentFilterError` - Reserved for safety filter blocks (Gemini currently raises `ProviderError` for blocked content)
+
+**Retries:** The Gemini provider uses a `retry_on_rate_limit` decorator (configurable retries and delay) before raising `RateLimitError`.
 
 On analysis failure, `analyze_vacancy` does not raise: it returns a `VacancyAnalysisResult` with `error_message` set, `trust_score=0`, and `verdict="Analysis Failed"`. Use `result.error_message` to detect failures.
 
@@ -190,18 +215,18 @@ On analysis failure, `analyze_vacancy` does not raise: it returns a `VacancyAnal
 
 ✅ **Complete**
 - Abstract provider interface
-- Gemini provider implementation
-- Two-stage analysis pipeline
+- Gemini provider implementation (`google.genai` SDK, strict JSON schema)
+- Two-stage analysis pipeline with optional per-stage API (`analyze_stage1`, `analyze_stage2`, `analyze_vacancy`)
 - Few-shot learning system
 - Error handling and logging
-- Pydantic schemas
+- Pydantic schemas (Stage 1 uses `VacancyGrade` from `database.enums`)
 - System prompts
+- Token usage tracking via `context.tokens_counter`; `result.tokens_used` set after full pipeline
+- Retry on rate limit (Gemini provider decorator with configurable retries and delay)
 
 🔄 **Future Enhancements**
 - OpenAI provider
 - Anthropic provider
-- Token usage tracking
-- Retry logic with exponential backoff
 - A/B testing for few-shot examples
-- Confidence score calculation
+- Confidence score from model (e.g. logprobs) instead of placeholder
 
