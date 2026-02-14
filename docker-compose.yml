@@ -2,10 +2,12 @@ services:
   db:
     image: ankane/pgvector:v0.5.1
     restart: always
+    ports:
+      - "127.0.0.1:5432:5432"
     environment:
-      POSTGRES_USER: ${DB_USER:-ryugue}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-onigari_pass}
-      POSTGRES_DB: onigari_db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     # Ограничиваем ресурсы для экономии
@@ -13,9 +15,9 @@ services:
       resources:
         limits:
           cpus: '0.5'
-          memory: 256M
+          memory: 1024M
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-ryugue} -d onigari_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5

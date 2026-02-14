@@ -3,16 +3,17 @@ import re
 
 from selectolax.lexbor import LexborHTMLParser
 
-from scrapers.schemas import VacancyDTO
+from scrapers.schemas import CompanyBaseDTO, CompanyFullDTO, VacancyBaseDTO, VacancyDetailDTO
+from utils.hashing import generate_vacancy_content_hash
 
-logger = logging.getLogger("OnigariScraper")
+logger = logging.getLogger(__name__)
 
 
 class DouParser:
-    def parse_list(self, html_content: str) -> list[VacancyDTO]:
+    def parse_list(self, html_content: str) -> list[VacancyBaseDTO]:
         """
         parse raw html from dou using selectolax
-        and generate dataclass VacancyDTO with bd structure
+        and generate dataclass VacancyBaseDTO with bd structure
         html_content: raw html content of site
         return: list containing structured vacancy info
         """
@@ -38,18 +39,19 @@ class DouParser:
 
             company_node = item.css_first("a.company")
             salary_node = item.css_first("span.salary")
+            desc_node = item.css_first(".sh-info")
 
             salary_from, salary_to = self._parse_dou_salary(salary_node.text(strip=True) if salary_node else None)
 
             vacancies.append(
-                VacancyDTO(
+                VacancyBaseDTO(
                     external_id=external_id,
                     title=title_node.text(strip=True),
-                    company_name=company_node.text(strip=True) if company_node else "Unknown",
-                    description=item.css_first(".sh-info").text(strip=True),
+                    company=CompanyBaseDTO(name=company_node.text(strip=True) if company_node else "Unknown"),
+                    short_description=desc_node.text(strip=True) if desc_node else None,
                     salary_from=salary_from,
                     salary_to=salary_to,
-                    url=url,
+                    source_url=url,
                 )
             )
         return vacancies
@@ -68,3 +70,44 @@ class DouParser:
         if len(nums) == 1:
             return float(nums[0]), None
         return None, None
+
+    def parse_detail(self, html_content: str, base_dto: VacancyBaseDTO) -> VacancyDetailDTO:
+        """Extract full vacancy content via Selectolax."""
+        parser = LexborHTMLParser(html_content)
+
+        # Vacancy text usually in .vacancy-section or .b-typo
+        desc_node = parser.css_first(".vacancy-section") or parser.css_first(".b-typo")
+        full_description = desc_node.text(strip=True) if desc_node else ""
+
+        # Generate content hash to track changes
+        content_hash = generate_vacancy_content_hash(full_description)
+
+        # Extract HR info
+        hr_name = None
+        hr_link = None
+        hr_node = parser.css_first(".sh-info")
+
+        if hr_node:
+            name_node = hr_node.css_first(".name")
+            if name_node:
+                hr_name = name_node.text(strip=True)
+
+            # Look for profile link
+            link_node = hr_node.css_first("a")
+            if link_node:
+                hr_link = link_node.attributes.get("href")
+
+        # Prepare contacts
+        contacts = {}
+        if hr_link:
+            contacts["profile_url"] = hr_link
+
+        # Build detailed DTO by spreading base fields and adding/overriding specific ones
+        return VacancyDetailDTO(
+            **base_dto.model_dump(exclude={"company"}),
+            company=CompanyFullDTO(name=base_dto.company.name),
+            full_description=full_description,
+            content_hash=content_hash,
+            hr_name=hr_name,
+            contacts=contacts,
+        )

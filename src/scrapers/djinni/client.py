@@ -1,10 +1,10 @@
-from ...config import DJINNI_CONFIG  # Поднимаемся на 2 уровня выше
+from ...config import DJINNI_CONFIG
 from ..base import BaseScraper
 
 
 class DjinniScraper(BaseScraper):
     def __init__(self):
-        # Теперь мы просто берем готовый конфиг
+        # Using pre-defined config
         super().__init__(
             base_url="https://djinni.co",
             user_agent=DJINNI_CONFIG.user_agent,
@@ -22,7 +22,7 @@ class DjinniScraper(BaseScraper):
 
         url = f"{self.base_url}/jobs/?page={page}"
 
-        # Делаем запрос через нашу магическую сессию
+        # Execute request via session
         response = await self._session.get(url)
 
         if response.status_code == 200:

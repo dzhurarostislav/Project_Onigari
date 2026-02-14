@@ -1,0 +1,4 @@
+asyncpg
+torch
+sentence-transformers
+pgvector
