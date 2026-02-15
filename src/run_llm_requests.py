@@ -115,7 +115,7 @@ async def main():
                     # 5 запросов в минуту = 1 запрос в 12 секунд. 
                     # У нас 2 запроса на вакансию, значит ждем ~25 секунд.
                     logger.info("⏳ Ожидание лимитов Free Tier (25s)...")
-                    await asyncio.sleep(25)
+                    await asyncio.sleep(50)
                 
     finally:
         await engine.dispose()

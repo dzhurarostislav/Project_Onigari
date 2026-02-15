@@ -125,7 +125,7 @@ src/
 The project uses environment variables for configuration:
 - **Database:** `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `DB_HOST` (default `db`), `DB_PORT` (default `5432`) — combined into async `DATABASE_URL` in `config.py`. Set `DB_ECHO=True` to log SQL.
 - **Scrapers:** `DOU_COOKIES`, `DOU_USER_AGENT` (DOU.ua); `DJINNI_COOKIES`, `DJINNI_USER_AGENT` (Djinni.co).
-- **Brain (LLM):** `GEMINI_API_KEY` or `GOOGLE_API_KEY` (required for Phase 4); `GEMINI_STAGE1_MODEL` (default `gemini-1.5-flash`), `GEMINI_STAGE2_MODEL` (default `gemini-1.5-flash`). `Config.validate()` checks that the API key is set.
+- **Brain (LLM):** `GEMINI_API_KEY` or `GOOGLE_API_KEY` (required for Phase 4); `GEMINI_STAGE1_MODEL` (default `gemini-2.5-flash`), `GEMINI_STAGE2_MODEL` (default `gemini-2.5-flash`). `Config.validate()` checks that the API key is set.
 
 For local development, variables are loaded from `.env` via `python-dotenv`.
 

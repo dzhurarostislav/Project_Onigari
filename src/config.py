@@ -17,8 +17,8 @@ class Config:
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     
     # Можно добавить выбор модели по умолчанию
-    GEMINI_STAGE1_MODEL = os.getenv("GEMINI_STAGE1_MODEL", "gemini-1.5-flash")
-    GEMINI_STAGE2_MODEL = os.getenv("GEMINI_STAGE2_MODEL", "gemini-1.5-flash")
+    GEMINI_STAGE1_MODEL = os.getenv("GEMINI_STAGE1_MODEL", "gemini-2.5-flash")
+    GEMINI_STAGE2_MODEL = os.getenv("GEMINI_STAGE2_MODEL", "gemini-2.5-flash")
 
     @classmethod
     def validate(cls):

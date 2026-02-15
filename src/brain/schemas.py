@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import List, Optional
 
-from database.enums import VacancyGrade
+from database.enums import VacancyGrade, WorkFormat, EmploymentType
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -51,6 +51,11 @@ class VacancyStructuredData(BaseModel):
         description="List of technologies mentioned (e.g., ['Python', 'Django', 'PostgreSQL']).",
     )
     grade: VacancyGrade = Field(description="Seniority level.")
+    work_format: WorkFormat = Field(description="Work format.")
+    employment_type: EmploymentType = Field(description="Employment type.")
+    experience_min: Optional[float] = Field(None, description="Minimum required experience in years. (float)", ge=0.0)
+    location_city: Optional[str] = Field(None, description="City where the job is located. Empty if remote.")
+    location_address: Optional[str] = Field(None, description="Address where the job is located. Empty if remote.")
     domain: Optional[str] = Field(None, description="Company domain (FinTech, Crypto, Gamedev, etc.).")
 
     salary_parse: Optional[SalaryData] = Field(None, description="Parsed salary info if found in text.")

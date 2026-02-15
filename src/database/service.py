@@ -161,6 +161,11 @@ class VacancyRepository:
         update_values = {
             "grade": data.grade,  # Enum compatible
             "status": VacancyStatus.STRUCTURED,
+            "work_format": data.work_format,
+            "employment_type": data.employment_type,
+            "experience_min": data.experience_min,
+            "location_city": data.location_city,
+            "location_address": data.location_address,
             # Use SQL concatenation for attributes (current || new), handling NULLs with coalesce
             "attributes": func.coalesce(
                 Vacancy.attributes, 
