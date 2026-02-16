@@ -1,74 +1,68 @@
 """
 Few-shot examples for Stage 2 (The Demon Hunter) analysis.
 
-These examples teach the LLM to detect toxic patterns, corporate lies,
-and red flags in job vacancies. They demonstrate the cynical, honest
-analysis style we expect.
-
-Update this file as we discover new toxic patterns in the wild.
+UPDATED PHILOSOPHY (v2.0):
+- MONEY & STABILITY > Corporate Values.
+- Silence on salary is NEUTRAL (Score 7).
+- "Grey" domains (Gambling, Crypto, Dating) imply USDT/Foreign currency = GREEN FLAG (Score 8+).
+- Modern Stack is crucial. Legacy without huge pay is a penalty.
 """
 
 STAGE2_FEW_SHOTS = """
 <EXAMPLES_OF_CORRECT_ANALYSIS>
 
-Example 1: The "Legacy Trap"
-Input Snippet: "Main stack: Python 3.11. Tasks: Maintenance of existing code base written in Twisted and Python 2.7."
+Example 1: The "Standard Corporate Silence" (Baseline)
+Input Snippet: "Middle/Senior Python Developer. Stack: Django, DRF, PostgreSQL, Celery. We offer: competitive salary based on interview, health insurance, English classes, friendly team."
 Analysis:
-  - Trust Score: 3
-  - Red Flag: "Technical Contradiction (Bait & Switch): Title says Python 3.11, reality is Python 2.7 legacy."
-  - Honest Summary: "You will rot maintaining dead code while dreaming of modern features. The 'Python 3.11' in the title is bait."
-  - Verdict: Avoid - Major contradiction between advertised and actual tech stack.
+  - Trust Score: 7
+  - Reasoning: "Standard stack, standard corporate benefits. 'Competitive salary' is vague but NEUTRAL (market standard). No toxic flags found."
+  - Honest Summary: "A boring, standard job. They won't tell you the salary until the end, but it doesn't look like a scam."
+  - Verdict: Safe - Typical market offer.
 
-Example 2: The "Burnout Factory"
-Input Snippet: "We are a rocket-ship startup! Looking for rockstars willing to wear many hats and work in a fast-paced dynamic environment. Pizza on Fridays!"
-Analysis:
-  - Trust Score: 2
-  - Red Flag: "Classic burnout signals ('rockstar', 'many hats', 'fast-paced')."
-  - Red Flag: "Pizza used as a benefit substitute instead of real compensation."
-  - Red Flag: "No clear role definition - 'wear many hats' means chaos."
-  - Toxic Phrases: ["rockstars willing to wear many hats", "fast-paced dynamic environment"]
-  - Honest Summary: "Chaos, unpaid overtime, and no defined role. You are cheap labor. 'Pizza on Fridays' is insulting instead of proper benefits."
-  - Verdict: Avoid - Multiple red flags indicating toxic startup culture.
-
-Example 3: The "Good Galley" (Rare but Exists)
-Input Snippet: "Stack: FastAPI, SQLAlchemy, PostgreSQL, AWS. Salary: $4000-5000 net. Sick leaves: 20 days paid. Overtime: Paid x2 (rarely happens, we respect work-life balance). Health insurance included."
+Example 2: The "Grey Goldmine" (Implicit USDT)
+Input Snippet: "Backend Engineer for a High-load iGaming platform. Tech: Python 3.12, FastAPI, Kafka, ClickHouse, Redis. We handle 10k+ RPS. Remote work, flexible hours."
 Analysis:
   - Trust Score: 9
-  - Honest Summary: "A transparent offer with clear rules, market salary, and real benefits. They explicitly mention work-life balance and compensate overtime properly."
-  - Verdict: Safe - Apply confidently. Rare example of honest vacancy.
+  - Green Flags: ["iGaming domain implies stable revenue & likely USDT/Currency peg", "Modern High-load Stack (FastAPI/ClickHouse)"]
+  - Reasoning: "Gambling/iGaming usually pays in hard currency (USDT) and creates technical challenges (Highload). No salary listed, but the domain implies money."
+  - Honest Summary: "It's a casino/betting platform. Morally grey, but financially green. You'll likely get paid in USDT and work with cool tech."
+  - Verdict: Gem - High probability of good pay and modern stack.
 
-Example 4: The "Vague Responsibilities"
-Input Snippet: "Responsibilities: Develop innovative solutions. Work with cutting-edge technologies. Collaborate with team. Deliver results."
-Analysis:
-  - Trust Score: 4
-  - Red Flag: "Zero concrete responsibilities - all buzzwords."
-  - Red Flag: "No mention of actual tech stack or projects."
-  - Honest Summary: "They have no idea what they want. You'll be thrown into random tasks with no direction."
-  - Verdict: Risky - Ask very specific questions about actual day-to-day work.
-
-Example 5: The "Salary Manipulation"
-Input Snippet: "Competitive salary based on experience. Senior Python Developer position."
-Analysis:
-  - Trust Score: 5
-  - Red Flag: "'Competitive salary' without numbers = below market rate."
-  - Red Flag: "For Senior level, salary should be stated upfront."
-  - Honest Summary: "They're hiding the salary because it's low. 'Based on experience' means they'll lowball you."
-  - Verdict: Risky - Demand exact numbers before wasting time on interviews.
-
-Example 6: The "Family Atmosphere" Trap
-Input Snippet: "We're like a family here! Everyone helps each other. Sometimes we work late together, but it's fun!"
+Example 3: The "Burnout Factory" (Toxic)
+Input Snippet: "We are a rocket-ship startup! Looking for rockstars willing to wear many hats. Dynamic environment, family atmosphere. Pizza on Fridays! Stress resistance is a must."
 Analysis:
   - Trust Score: 3
-  - Red Flag: "'Family' = emotional manipulation and guilt trips."
-  - Red Flag: "'Work late together' = unpaid overtime normalized."
-  - Toxic Phrases: ["We're like a family", "Sometimes we work late together, but it's fun"]
-  - Honest Summary: "They'll guilt you into unpaid overtime using 'family' rhetoric. Boundaries don't exist here."
-  - Verdict: Avoid - Classic toxic culture red flag.
+  - Red Flags: ["'Rockstar' & 'Many hats' = Exploitation", "'Family' = Emotional manipulation", "'Stress resistance' = Toxic processes"]
+  - Toxic Phrases: ["wear many hats", "family atmosphere", "stress resistance is a must"]
+  - Honest Summary: "You will do the work of three people for the salary of one. They use 'family' to guilt-trip you into unpaid overtime."
+  - Verdict: Avoid - Classic toxic startup.
+
+Example 4: The "Legacy Trap" (Honest but Painful)
+Input Snippet: "Support and development of internal ERP system. Stack: Python 2.7, Zope, jQuery. Stability guaranteed. Salary: up to $2000."
+Analysis:
+  - Trust Score: 4
+  - Red Flags: ["Ancient Stack (Python 2.7/Zope)", "Salary ($2000) is too low for suffering with legacy"]
+  - Honest Summary: "Career suicide. You will rot maintaining dead code for peanuts."
+  - Verdict: Risky/Avoid - Unless you are desperate.
+
+Example 5: The "Golden Handcuffs" (Legacy but Rich)
+Input Snippet: "Senior Engineer to maintain legacy monolith. Stack: Python 2.7, Twisted. Salary: $6500 - $7000 net. B2B contract."
+Analysis:
+  - Trust Score: 8
+  - Green Flags: ["Very High Salary (compensates for legacy)", "B2B Contract"]
+  - Red Flags: ["Legacy Stack"]
+  - Reasoning: "The stack is dead, but the money is alive. They understand that maintaining this requires a premium."
+  - Honest Summary: "It's a graveyard, but they give you a golden shovel. If you need money and don't care about your CV, take it."
+  - Verdict: Safe - Honest trade of sanity for money.
+
+Example 6: The "Web3/Crypto" (Wild West)
+Input Snippet: "Blockchain Developer. Solidity + Python. Building the future of DeFi. Token allocation included."
+Analysis:
+  - Trust Score: 8
+  - Green Flags: ["Crypto domain = Potential USDT pay", "Token allocation (bonus lottery)"]
+  - Red Flags: ["DeFi can be unstable"]
+  - Honest Summary: "High risk, high reward. Likely paid in crypto. If the project doesn't rugpull, you're rich."
+  - Verdict: Safe - Good for financial growth.
 
 </EXAMPLES_OF_CORRECT_ANALYSIS>
 """
-
-
-# Future: Add more examples as we discover patterns
-# TODO: Consider A/B testing different example sets
-# TODO: Version control example quality (track which examples improve accuracy)

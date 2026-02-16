@@ -1,12 +1,12 @@
 import logging
 
-from sqlalchemy import func, select, update, or_, cast
-from sqlalchemy.dialects.postgresql import insert, JSONB
+from sqlalchemy import cast, func, or_, select, update
+from sqlalchemy.dialects.postgresql import JSONB, insert
 from sqlalchemy.orm import selectinload
 
+from brain.schemas import VacancyAnalysisResult, VacancyStructuredData
 from database.enums import VacancyStatus
 from database.models import Company, Vacancy, VacancyAnalysis, VacancySnapshot
-from brain.schemas import VacancyAnalysisResult, VacancyStructuredData
 from scrapers.schemas import VacancyBaseDTO, VacancyDetailDTO
 
 logger = logging.getLogger(__name__)
@@ -155,9 +155,9 @@ class VacancyRepository:
             "tech_stack": data.tech_stack,
             "benefits": data.benefits,
             "red_flag_keywords": data.red_flag_keywords,
-            "domain": data.domain
+            "domain": data.domain,
         }
-        
+
         update_values = {
             "grade": data.grade,  # Enum compatible
             "status": VacancyStatus.STRUCTURED,
@@ -167,20 +167,19 @@ class VacancyRepository:
             "location_city": data.location_city,
             "location_address": data.location_address,
             # Use SQL concatenation for attributes (current || new), handling NULLs with coalesce
-            "attributes": func.coalesce(
-                Vacancy.attributes, 
-                cast({}, JSONB)
-            ).concat(cast(attributes_update, JSONB))
+            "attributes": func.coalesce(Vacancy.attributes, cast({}, JSONB)).concat(cast(attributes_update, JSONB)),
         }
-        
+
         # Map Salary if present
         if data.salary_parse:
-            update_values.update({
-                "salary_from": data.salary_parse.min,
-                "salary_to": data.salary_parse.max,
-                "salary_currency": data.salary_parse.currency,
-                "is_gross": data.salary_parse.is_gross
-            })
+            update_values.update(
+                {
+                    "salary_from": data.salary_parse.min,
+                    "salary_to": data.salary_parse.max,
+                    "salary_currency": data.salary_parse.currency,
+                    "is_gross": data.salary_parse.is_gross,
+                }
+            )
 
         stmt = update(Vacancy).where(Vacancy.id == vacancy_id).values(**update_values)
         await self.session.execute(stmt)
@@ -193,12 +192,9 @@ class VacancyRepository:
         Uses Atomic Transaction.
         """
         async with self.session.begin_nested():
-            
             # 1. Reset is_current for all old analyses
             await self.session.execute(
-                update(VacancyAnalysis)
-                .where(VacancyAnalysis.vacancy_id == vacancy_id)
-                .values(is_current=False)
+                update(VacancyAnalysis).where(VacancyAnalysis.vacancy_id == vacancy_id).values(is_current=False)
             )
 
             # 2. Save Analysis (marked as current)
@@ -210,24 +206,21 @@ class VacancyRepository:
             await self.session.execute(
                 update(Vacancy)
                 .where(Vacancy.id == vacancy_id)
-                .values(
-                    status=VacancyStatus.ANALYZED,
-                    last_analysis_id=analysis.id
-                )
+                .values(status=VacancyStatus.ANALYZED, last_analysis_id=analysis.id)
             )
         await self.session.commit()
 
     async def get_vacancies_for_llm_processing(self, limit: int | None = None) -> list[Vacancy]:
+        stmt = (
+            select(Vacancy)
+            .where(or_(Vacancy.status == VacancyStatus.VECTORIZED, Vacancy.status == VacancyStatus.STRUCTURED))
+            .limit(limit)
+        )
 
-        stmt = select(Vacancy).where(
-            or_(
-                Vacancy.status == VacancyStatus.VECTORIZED,
-                Vacancy.status == VacancyStatus.STRUCTURED
-            )
-        ).limit(limit)
-        
         # Eager load company to avoid N+1
         stmt = stmt.options(selectinload(Vacancy.company))
-        
+
+        stmt = stmt.with_for_update(skip_locked=True)
+
         result = await self.session.execute(stmt)
         return result.scalars().all()

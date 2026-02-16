@@ -6,7 +6,6 @@ from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Index, Stri
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from brain.schemas import VacancyStructuredData
 
 from database.enums import (
     EmploymentType,
@@ -61,8 +60,7 @@ class Vacancy(Base):
 
     # Relationships (Analysis)
     last_analysis_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("vacancy_analyses.id", use_alter=True, name="fk_last_analysis"),
-        nullable=True
+        ForeignKey("vacancy_analyses.id", use_alter=True, name="fk_last_analysis"), nullable=True
     )
     last_analysis: Mapped[Optional["VacancyAnalysis"]] = relationship(
         "VacancyAnalysis",
@@ -134,13 +132,23 @@ class Vacancy(Base):
     __table_args__ = (Index("ix_vacancy_attributes_gin", "attributes", postgresql_using="gin"),)
 
     def to_structured_data(self):
+        # Local import to avoid circular dependency
+        from src.brain.schemas import VacancyStructuredData
+
+        # Используем Enum-ы, которые уже импортированы в начале файла
+        # Если в базе NULL, подставляем безопасные дефолты
         return VacancyStructuredData(
             tech_stack=self.attributes.get("tech_stack", []),
             benefits=self.attributes.get("benefits", []),
             red_flag_keywords=self.attributes.get("red_flag_keywords", []),
             domain=self.attributes.get("domain"),
-            grade=self.grade,
-            salary_parse=None
+            # Если грейд не определен, считаем его MIDDLE
+            grade=self.grade or VacancyGrade.MIDDLE,
+            salary_parse=None,
+            # --- ЛЕЧЕНИЕ ЗДЕСЬ ---
+            # Передаем обязательные поля с фоллбэком на дефолт
+            work_format=self.work_format or WorkFormat.OFFICE,
+            employment_type=self.employment_type or EmploymentType.FULL_TIME,
         )
 
 
@@ -148,48 +156,38 @@ class VacancyAnalysis(Base):
     __tablename__ = "vacancy_analyses"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    
+
     # Foreign key to vacancy
-    vacancy_id: Mapped[int] = mapped_column(
-        ForeignKey("vacancies.id", ondelete="CASCADE"), 
-        index=True,
-        nullable=False
-    )
-    
+    vacancy_id: Mapped[int] = mapped_column(ForeignKey("vacancies.id", ondelete="CASCADE"), index=True, nullable=False)
+
     # Relationships
-    vacancy: Mapped["Vacancy"] = relationship(
-        "Vacancy", 
-        foreign_keys=[vacancy_id],
-        back_populates="analyses"
-    )
+    vacancy: Mapped["Vacancy"] = relationship("Vacancy", foreign_keys=[vacancy_id], back_populates="analyses")
     current_for_vacancy: Mapped[Optional["Vacancy"]] = relationship(
-        "Vacancy",
-        foreign_keys="[Vacancy.last_analysis_id]",
-        back_populates="last_analysis"
+        "Vacancy", foreign_keys="[Vacancy.last_analysis_id]", back_populates="last_analysis"
     )
 
     # Analysis results
     trust_score: Mapped[int] = mapped_column(default=0)
-    red_flags: Mapped[list] = mapped_column(JSONB, server_default="[]", default=list) 
+    red_flags: Mapped[list] = mapped_column(JSONB, server_default="[]", default=list)
     toxic_phrases: Mapped[list] = mapped_column(JSONB, server_default="[]", default=list)
-    
+
     # Text conclusions
     honest_summary: Mapped[str] = mapped_column(Text)
     verdict: Mapped[str] = mapped_column(Text)
-    
+
     # Model metadata
     model_name: Mapped[str] = mapped_column(String)  # "gemini-1.5-pro", "gpt-4o"
     provider: Mapped[str] = mapped_column(String)  # "google", "openai"
     analysis_version: Mapped[str] = mapped_column(String, default="1.0")  # Prompt version
-    
+
     # Performance metrics
     confidence_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # 0.0 - 1.0
     tokens_used: Mapped[Optional[int]] = mapped_column(nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    
+
     # Status
     is_current: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
-    
+
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     __table_args__ = (

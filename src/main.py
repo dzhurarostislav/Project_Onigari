@@ -66,7 +66,7 @@ async def run_deep_extraction():
             crawler = DetailCrawler(repository, scraper, parser)
 
             logger.info("🔪 Starting deep extraction of vacancy details...")
-            await crawler.crawl(20)
+            await crawler.crawl()
 
 
 async def main():

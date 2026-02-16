@@ -14,8 +14,8 @@ class DetailCrawler:
         self.scraper = scraper
         self.parser = parser
 
-    async def crawl(self, limit: int = 10):
-        logger.info(f"👹 Starting deep crawl for {limit} vacancies...")
+    async def crawl(self, limit: int | None = None):
+        logger.info("👹 Starting deep crawl...")
 
         pending_vacancies = await self.repo.get_vacancies_by_status(VacancyStatus.NEW, limit)
 

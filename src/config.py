@@ -15,15 +15,23 @@ class ScraperConfig:
 class Config:
     # Официальное имя для нового SDK
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
     # Можно добавить выбор модели по умолчанию
     GEMINI_STAGE1_MODEL = os.getenv("GEMINI_STAGE1_MODEL", "gemini-2.5-flash")
     GEMINI_STAGE2_MODEL = os.getenv("GEMINI_STAGE2_MODEL", "gemini-2.5-flash")
+    OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+    TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
     @classmethod
     def validate(cls):
         if not cls.GEMINI_API_KEY:
-            raise ValueError("👹 Ключ не найден! Без него Охота не начнется.")
+            raise ValueError("GEMINI_API_KEY is not set")
+        if not cls.OPENAI_API_KEY:
+            raise ValueError("OPENAI_API_KEY is not set")
+        if not cls.TELEGRAM_BOT_TOKEN or not cls.TELEGRAM_CHAT_ID:
+            print("⚠️ Warning: Telegram notifications are disabled (missing keys)")
 
 
 # 1. Scraper Configs

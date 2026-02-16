@@ -1,10 +1,9 @@
 from enum import Enum
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
-from database.enums import VacancyGrade, WorkFormat, EmploymentType
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
-from pydantic import BaseModel, ConfigDict, Field
-
+from database.enums import EmploymentType, VacancyGrade, WorkFormat
 
 # --- ENUMS FOR STRICT VALIDATION ---
 # LLM structured output will enforce these values automatically
@@ -18,9 +17,6 @@ class Currency(str, Enum):
     UAH = "UAH"  # Ukrainian Hryvnia (гривня)
     PLN = "PLN"  # Polish Zloty
     GBP = "GBP"
-
-
-
 
 
 # --- STAGE 1: THE AUTOPSY (Structured Data Extraction) ---
@@ -72,6 +68,73 @@ class VacancyStructuredData(BaseModel):
 
 # --- STAGE 2: THE JUDGMENT (Onigari Analysis) ---
 # Задача: Оценить "душу" вакансии. Сарказм, поиск лжи, вердикт.
+
+
+class VacancyContext(BaseModel):
+    """
+    RICH Context based on the Vacancy SQLAlchemy model.
+    Transfers the Single Source of Truth from DB to LLM.
+    """
+
+    model_config = ConfigDict(from_attributes=True)  # Магия: работает с ORM объектами
+
+    id: int
+    title: str
+
+    # Company info (Flattened for prompt)
+    company_name: str = Field(default="Unknown Company")
+
+    description: Optional[str]
+
+    # MONEY (The most important part)
+    salary_from: Optional[float]
+    salary_to: Optional[float]
+    salary_currency: Optional[str] = "USD"
+    is_gross: bool = False
+
+    # Metadata that changes the verdict
+    hr_name: Optional[str] = None
+    contacts: Dict[str, Any] = Field(default_factory=dict)  # Telegram/Email inside
+    work_format: str = "OFFICE"  # Convert Enum to string
+    location_city: Optional[str] = None
+
+    url: str = Field(alias="source_url")
+
+    @computed_field
+    def financial_summary(self) -> str:
+        """Generates a human-readable salary string for the LLM."""
+        if not self.salary_from and not self.salary_to:
+            return "NOT SPECIFIED (Hidden)"
+
+        currency = self.salary_currency or "USD"
+        tax_info = " (Gross)" if self.is_gross else " (Net?)"
+
+        if self.salary_from and self.salary_to:
+            return f"{self.salary_from} - {self.salary_to} {currency}{tax_info}"
+
+        if self.salary_from:
+            return f"From {self.salary_from} {currency}{tax_info}"
+
+        if self.salary_to:
+            return f"Up to {self.salary_to} {currency}{tax_info}"
+
+        return "Error parsing salary"
+
+    @computed_field
+    def contact_info(self) -> str:
+        """Extracts direct contacts if available."""
+        if not self.contacts:
+            return "Apply via site"
+
+        details = []
+        if self.hr_name:
+            details.append(f"HR: {self.hr_name}")
+
+        # Если в контактах есть телеграм - это жирный плюс
+        for channel, value in self.contacts.items():
+            details.append(f"{channel}: {value}")
+
+        return " | ".join(details)
 
 
 class VacancyJudgment(BaseModel):
@@ -128,6 +191,25 @@ class VacancyAnalysisResult(BaseModel):
         None, ge=0.0, le=1.0, description="Model's confidence in the analysis (0.0-1.0)"
     )
     error_message: Optional[str] = Field(None, description="Error message if analysis failed")
+
+    @classmethod
+    def create_failed(cls, error_msg: str, provider_name: str, model_name: str):
+        """Фабричный метод для создания результата-заглушки при сбое."""
+        return cls(
+            structured_data=VacancyStructuredData(tech_stack=[], grade=VacancyGrade.JUNIOR, red_flag_keywords=[]),
+            judgment=VacancyJudgment(
+                trust_score=0,
+                red_flags=[f"System error: {error_msg}"],
+                toxic_phrases=[],
+                honest_summary="Analysis failed due to a technical issue.",
+                verdict="ERROR",
+            ),
+            model_name=model_name,
+            provider=provider_name,
+            analysis_version="1.2",
+            tokens_used=0,
+            error_message=error_msg,
+        )
 
     def to_db_dict(self) -> dict:
         """

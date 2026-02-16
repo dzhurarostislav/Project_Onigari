@@ -12,15 +12,16 @@ This project aggregates vacancies from various job platforms and analyzes them t
 * **Trust Score (1–10):** Onigari verdict per vacancy: trust score, red flags, toxic phrases, and final verdict (Safe/Risky/Avoid). Stored in `VacancyAnalysis`.
 * **Human-to-Human Translation:** “Honest summary” — cynical, plain-language translation of HR-speak (part of the brain analysis output).
 * **Semantic Search:** **BGE-M3** embeddings (1024d) for similarity search; status flow EXTRACTED → VECTORIZED (planned: pgvector queries).
+* **Notifications (optional):** Telegram reports for completed analyses with trust_score ≥ 7 (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`).
 
 ## Tech Stack
 * **Language:** Python 3.11+ (asynchronous)
 * **Orchestration:** Docker & Docker Compose
-* **LLM:** **Google Gemini** (brain module: abstract provider, Gemini implementation; planned: OpenAI, Anthropic, Ollama)
+* **LLM:** **Google Gemini** + **OpenAI** (brain: abstract provider, Gemini + OpenAI implementations, **SmartChainProvider** for failover/cooldown; planned: Anthropic, Ollama)
 * **Embedding Model:** BGE-M3 (1024 dimensions) via `sentence-transformers`; GPU (CUDA) when available
 * **Database:** PostgreSQL + **pgvector** (for semantic search) + JSONB
 * **ORM:** SQLAlchemy 2.0 (async) + PostgreSQL `INSERT ... ON CONFLICT`
-* **Validation / DTOs:** Pydantic (scrapers: `VacancyDTO`; brain: `VacancyStructuredData`, `VacancyJudgment`, `VacancyAnalysisResult`)
+* **Validation / DTOs:** Pydantic (scrapers: `VacancyDTO`; brain: `VacancyStructuredData`, `VacancyJudgment`, `VacancyAnalysisResult`, `VacancyContext`)
 * **HTTP Client:** `curl-cffi` with Chrome impersonation
 * **HTML Parsing:** `selectolax` (`LexborHTMLParser`)
 * **Config:** `python-dotenv` + environment variables
@@ -50,14 +51,17 @@ src/
 ├── brain/
 │   ├── README.md        # Two-stage analysis pipeline docs
 │   ├── interfaces.py    # Abstract LLMProvider contract
-│   ├── providers.py     # GeminiProvider (planned: OpenAI, Anthropic)
-│   ├── context.py       # tokens_counter (ContextVar) for token usage tracking across stages
+│   ├── providers.py     # GeminiProvider, OpenAIProvider (retry/cooldown); planned: Anthropic
+│   ├── manager.py       # SmartChainProvider: multi-provider chain with failover and cooldown
 │   ├── exceptions.py    # AnalysisError, ProviderError, ValidationError, RateLimitError, ContentFilterError
-│   ├── schemas.py       # Pydantic: VacancyStructuredData, VacancyJudgment, VacancyAnalysisResult
+│   ├── schemas.py       # Pydantic: VacancyStructuredData, VacancyJudgment, VacancyAnalysisResult, VacancyContext
 │   ├── prompts.py       # System/user prompts for Stage 1 (Investigator) & Stage 2 (Demon Hunter)
 │   ├── few_shots.py     # Few-shot examples for Stage 2
 │   ├── analyzer.py      # VacancyAnalyzer: two-stage pipeline (Investigator → Demon Hunter)
 │   └── vectorizer.py    # VacancyVectorizer: BGE-M3 embeddings (title + company + description/snapshot)
+├── services/
+│   ├── __init__.py
+│   └── notifications.py # TelegramService: HTML reports for completed analyses (trust_score > 7)
 └── utils/
     └── hashing.py       # SHA-256 based hash helpers (identity/content)
 ```
@@ -76,7 +80,7 @@ src/
   `run_vectorizer.py` runs as a separate process: it loads `VacancyVectorizer` (BGE-M3 via `sentence-transformers`), fetches vacancies with status `EXTRACTED`, encodes title + company + full description (from `last_snapshot` or `description`), and calls `VacancyRepository.batch_update_vectors()` to write embeddings and set status to `VacancyStatus.VECTORIZED`.
 
 - **Phase 4 – LLM analysis (optional worker)**:  
-  `run_llm_requests.py` runs as a separate process: it fetches vacancies with status `VECTORIZED` or `STRUCTURED` via `VacancyRepository.get_vacancies_for_llm_processing()`. For each vacancy: if `VECTORIZED`, it runs **Stage 1 (Investigator)** to extract structured data, then `save_stage1_result()` updates attributes and sets status to `STRUCTURED`; if already `STRUCTURED`, it reuses `Vacancy.to_structured_data()`. **Stage 2 (Demon Hunter)** then runs for all; `save_stage2_result()` creates a `VacancyAnalysis` record and sets status to `ANALYZED`. Status flow: `new` → `extracted` → `vectorized` → `structured` (after Stage 1) → `analyzed` (after Stage 2).
+  `run_llm_requests.py` runs as a separate process: it uses **SmartChainProvider** (Gemini + OpenAI) for failover and cooldown, fetches vacancies with status `VECTORIZED` or `STRUCTURED` via `VacancyRepository.get_vacancies_for_llm_processing()`. For each vacancy: if `VECTORIZED`, it runs **Stage 1 (Investigator)** to extract structured data, then `save_stage1_result()` updates attributes and sets status to `STRUCTURED`; if already `STRUCTURED`, it reuses `Vacancy.to_structured_data()`. **Stage 2 (Demon Hunter)** runs for all; `save_stage2_result()` creates a `VacancyAnalysis` record and sets status to `ANALYZED`. **TelegramService** sends an HTML report for analyses with trust_score ≥ 7 (optional; requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`). Status flow: `new` → `extracted` → `vectorized` → `structured` (after Stage 1) → `analyzed` (after Stage 2).
 
 ## Database Schema
 
@@ -125,7 +129,8 @@ src/
 The project uses environment variables for configuration:
 - **Database:** `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `DB_HOST` (default `db`), `DB_PORT` (default `5432`) — combined into async `DATABASE_URL` in `config.py`. Set `DB_ECHO=True` to log SQL.
 - **Scrapers:** `DOU_COOKIES`, `DOU_USER_AGENT` (DOU.ua); `DJINNI_COOKIES`, `DJINNI_USER_AGENT` (Djinni.co).
-- **Brain (LLM):** `GEMINI_API_KEY` or `GOOGLE_API_KEY` (required for Phase 4); `GEMINI_STAGE1_MODEL` (default `gemini-2.5-flash`), `GEMINI_STAGE2_MODEL` (default `gemini-2.5-flash`). `Config.validate()` checks that the API key is set.
+- **Brain (LLM):** `GEMINI_API_KEY` or `GOOGLE_API_KEY` and `OPENAI_API_KEY` (required for Phase 4 worker); `GEMINI_STAGE1_MODEL` (default `gemini-2.5-flash`), `GEMINI_STAGE2_MODEL` (default `gemini-2.5-flash`), `OPENAI_MODEL` (default `gpt-4o-mini`). `Config.validate()` ensures both API keys are set.
+- **Notifications:** `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` (optional; enables Telegram reports for high-trust analyses).
 
 For local development, variables are loaded from `.env` via `python-dotenv`.
 
@@ -138,11 +143,12 @@ For local development, variables are loaded from `.env` via `python-dotenv`.
 - [x] VacancyRepository with batch upsert & deduplication by `identity_hash`
 - [x] Djinni scraper client (parser implementation pending)
 - [x] BGE-M3 embedding pipeline: `brain/vectorizer.py` + `run_vectorizer.py` (EXTRACTED → VECTORIZED), `VacancyRepository.batch_update_vectors`
-- [x] LLM analysis pipeline: two-stage brain (Investigator + Demon Hunter), Gemini provider, Pydantic schemas, few-shot learning; trust score, red flags, honest summary, verdict → `VacancyAnalysis`
-- [x] Phase 4 worker: `run_llm_requests.py` (VECTORIZED/STRUCTURED → Stage 1 + Stage 2 → ANALYZED), `save_stage1_result` / `save_stage2_result`, `get_vacancies_for_llm_processing`; token tracking via `brain/context.py`; config `GEMINI_API_KEY`, `GEMINI_STAGE1_MODEL`, `GEMINI_STAGE2_MODEL`
+- [x] LLM analysis pipeline: two-stage brain (Investigator + Demon Hunter), Gemini + OpenAI providers, Pydantic schemas, few-shot learning; trust score, red flags, honest summary, verdict → `VacancyAnalysis`
+- [x] Phase 4 worker: `run_llm_requests.py` (VECTORIZED/STRUCTURED → Stage 1 + Stage 2 → ANALYZED), **SmartChainProvider** (Gemini + OpenAI failover/cooldown), `save_stage1_result` / `save_stage2_result`, `get_vacancies_for_llm_processing`; config `GEMINI_API_KEY`, `OPENAI_API_KEY`, `GEMINI_STAGE1_MODEL`, `GEMINI_STAGE2_MODEL`, `OPENAI_MODEL`
+- [x] Telegram notifications: `services/notifications.py` — HTML reports for completed analyses (trust_score ≥ 7) when `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set
 - [ ] Semantic search (pgvector queries on `embedding`)
 - [ ] LinkedIn scraper
-- [ ] Optional: OpenAI/Anthropic providers, retry/backoff (Gemini already has rate-limit retry)
+- [ ] Optional: Anthropic provider (Gemini and OpenAI have retry/cooldown)
 
 ## Getting Started
 
@@ -171,11 +177,11 @@ python src/run_vectorizer.py
 
 It processes vacancies with status `EXTRACTED`, computes BGE-M3 vectors, and sets them to `VECTORIZED`.
 
-To run the LLM analysis pipeline (Phase 4), set `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) in `.env`, then run the standalone worker:
+To run the LLM analysis pipeline (Phase 4), set `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) and `OPENAI_API_KEY` in `.env`. Optionally set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` for Telegram reports on high-trust analyses. Then run the standalone worker:
 
 ```bash
 # From project root, with PYTHONPATH=src and DB reachable (e.g. port 5432 for local Postgres)
 python src/run_llm_requests.py
 ```
 
-It processes vacancies with status `VECTORIZED` or `STRUCTURED`, runs Stage 1 (if needed) and Stage 2, and writes results to `VacancyAnalysis` with status `ANALYZED`. For programmatic use (e.g. single-vacancy analysis with custom `user_role`), see **`src/brain/README.md`**.
+It uses **SmartChainProvider** (Gemini then OpenAI on failover/cooldown), processes vacancies with status `VECTORIZED` or `STRUCTURED`, runs Stage 1 (if needed) and Stage 2, and writes results to `VacancyAnalysis` with status `ANALYZED`. For programmatic use (e.g. single-vacancy analysis with custom `user_role`), see **`src/brain/README.md`**.

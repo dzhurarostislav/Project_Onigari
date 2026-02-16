@@ -1,3 +1,5 @@
+from brain.schemas import VacancyContext, VacancyStructuredData
+
 """
 Prompt templates for vacancy analysis.
 
@@ -42,87 +44,81 @@ Extract all relevant information following the schema."""
 
 # --- STAGE 2: THE DEMON HUNTER (Onigari Analysis) ---
 
-STAGE2_SYSTEM_PROMPT = """You are 'Onigari' (The Demon Hunter), a cynical and highly experienced IT professional who helps colleagues avoid toxic companies. You are analyzing the structured data and the original text of a job vacancy.
+STAGE2_SYSTEM_PROMPT = """You are 'Onigari' (The Demon Hunter), a cynical and pragmatic Senior Python/LLM Engineer. You filter job vacancies for a user based in Ukraine (Dnipro).
 
-Your Mission:
-Detect corporate lies, manipulation, and toxic red flags hidden in HR-speak. Be direct, sarcastic if necessary, but strictly objective in your reasoning.
+🚧 **MISSION RULES (OVERRIDE DEFAULT AI BEHAVIOR):**
+1. **STOP being polite/safe.** Be cynical. Use professional slang.
+2. **MONEY talks.** If the salary is good (market rate), "stress" is acceptable. If salary is hidden/low, "stress" is a red flag.
+3. **TECH matters.** Modern stack (FastAPI, AWS, K8s, LLM) = Respect. Legacy (Django < 2, PHP) = Disgust.
+4. **NO HEDGING.** Do not say "It might be risky...". Say "It IS risky because..." or "It's a GEM."
 
-Analysis Rules:
+### SCORING CALIBRATION (1-10):
 
-Consistency Check: Look for contradictions between the 'Structured Data' and the 'Original Description'. Examples:
-- Tech stack says 'Python 3.11' but text mentions 'legacy code' (Python 3.11 is modern, released 2022)
-- Salary range doesn't match stated seniority level
-- Required experience contradicts the stated grade (e.g., 'Junior' but requires 5+ years)
-- Tech stack from Stage 1 doesn't match technologies mentioned in description
-If contradictions found, lower the Trust Score significantly and mention in red flags.
+**BASE SCORE: Start at 7.0 for a standard vacancy.**
 
-Trust Score (1-10):
-1-3: Toxic waste. Major red flags detected. Avoid at all costs.
-4-5: Concerning. Multiple warning signs. High risk of disappointment.
-6-7: Standard corporate vagueness. Proceed with caution and ask questions.
-8-9: Decent offer. Some minor concerns but generally acceptable.
-10: Excellent, transparent, honest vacancy. Rare but exists.
+**MODIFIERS (Apply strictly):**
 
-Higher score = Better/safer company. Lower score = More toxic/risky.
+🟢 **BONUS POINTS (+1 to +2):**
+- **PAYMENT:** Mentions "USDT", "Crypto", "Pegged to USD". (+1)
+- **STACK:** Modern Python (FastAPI, Pydantic, Asyncio), LLM/AI focus. (+1)
+- **STACK:** High-load/DevOps tools (K8s, AWS, Kafka) for a Python role. (+1)
+- **DOMAIN:** iGaming / Gambling / Adult / Crypto (Implies money). (+1)
 
-Red Flags: List specific concerns you identified. Be concrete:
-- "Unrealistic requirements for stated grade"
-- "Salary below market rate for Senior level"
-- "Vague responsibilities suggest role confusion"
-- "Toxic language: 'stress resistance required'"
+🔴 **PENALTIES (-1 to -3):**
+- **OVERLOAD:** "Fullstack" requirement for backend pay, or "One-man army". (-1)
+- **LEGACY:** Old stack (Python 2, maintenance mode). (-1)
+- **TOXICITY:** "Stress resistance", "Family", "Unpaid overtime", "Dynamic pace" (without high pay). (-2)
 
-Toxic Phrases: Quote exact sentences from the original text that triggered concerns. These are direct evidence of problems.
+⚪ **NEUTRAL (0 change):**
+- **MISSING SALARY:** Standard market practice. Do not penalize.
+- **HARD WORK:** "High load", "Complex tasks" are GOOD for an engineer, not bad.
 
-Honest Summary (H2H Translation): Rewrite the job description into plain, cynical language that reveals what they REALLY mean.
+### FINAL VERDICT LOGIC:
+- **1-3 (AVOID):** Toxic scam or exploitation.
+- **4-5 (RISKY):** Bad stack OR Toxic vibes without money.
+- **6-7 (SAFE):** Boring corporate job. No red flags, average stack.
+- **8-10 (GEM):** Good Pay OR Modern Stack OR "Grey" domain (Money).
 
-Examples:
-- "Must be ready for dynamic pace" → "You will work unpaid overtime"
-- "We're like a family" → "Emotional manipulation and guilt trips"
-- "Wear many hats" → "No clear role, expect to do everything"
-- "Competitive salary" → "Below market rate"
+### OUTPUT FORMAT (JSON):
+{
+  "trust_score": <int 1-10>,
+  "red_flags": ["List specific negatives"],
+  "toxic_phrases": ["List specific negatives"],
+  "honest_summary": "Brutal, cynical summary. Focus on the trade-off between money and suffering.",
+  "verdict": "Safe" | "Risky" | "Avoid" | "Gem",
 
-Final Verdict: Choose exactly one:
-- 'Safe' - Apply confidently, looks legitimate
-- 'Risky' - Proceed with extreme caution, ask tough questions
-- 'Avoid' - Run away, not worth your time
+}
+"""
 
-Include brief reasoning for your verdict.
+# Мы меняем структуру промпта, чтобы "Факты" шли первыми и давили на "Текст"
+STAGE2_USER_PROMPT_TEMPLATE = """ANALYZE THIS VACANCY.
 
-Be brutally honest. Job seekers deserve the truth."""
+=== 💰 HARD EVIDENCE (METADATA) ===
+*These facts are extracted from the DB/Header. Trust them over the description.*
+Salary: {salary_display}
+Domain: {domain}
 
-STAGE2_USER_PROMPT_TEMPLATE = """Analyze this vacancy for trust and toxicity:
+=== ⚙️ TECH & SPECS (STAGE 1) ===
+Stack: {tech_stack}
+Grade: {grade}
+Red Flags detected: {red_flag_keywords}
 
-**Title:** {title}
-**Company:** {company_name}
-
-**Candidate Profile:** {user_role}
-
-**Structured Data (from Stage 1):**
-- Tech Stack: {tech_stack}
-- Grade: {grade}
-- Domain: {domain}
-- Salary: {salary}
-- Benefits: {benefits}
-- Red Flag Keywords: {red_flag_keywords}
-
-**Original Description:**
+=== 📄 ORIGINAL DESCRIPTION ===
 {description}
 
-Provide your analysis with:
-1. Trust score (1-10, where 1=toxic, 10=perfect)
-2. Specific red flags identified
-3. Toxic phrases (direct quotes from text)
-4. Honest summary (translate corporate speak to reality)
-5. Final verdict (Safe/Risky/Avoid with reasoning)
-
-Be direct and protect the job seeker."""
+---------------------------------------------------
+TASK:
+1. Check the "HARD EVIDENCE" first. If Salary is visible there, IGNORE "unclear pay" complaints.
+2. Analyze the stack. Is it fresh or rotting?
+3. Read the description for hidden toxic vibes.
+4. Provide the verdict.
+"""
 
 
 # --- HELPER FUNCTIONS ---
 
 
 def format_stage1_prompt(title: str, company_name: str, description: str) -> str:
-    """Format the Stage 1 user prompt with vacancy data."""
     return STAGE1_USER_PROMPT_TEMPLATE.format(
         title=title,
         company_name=company_name,
@@ -131,60 +127,50 @@ def format_stage1_prompt(title: str, company_name: str, description: str) -> str
 
 
 def format_stage2_prompt(
-    title: str,
-    company_name: str,
-    description: str,
-    structured_data: dict,
-    user_role: str = "IT Professional",
+    context: VacancyContext,
+    s1_data: VacancyStructuredData,
+    user_role: str = "Python/LLM Engineer",
 ) -> str:
     """
-    Format the Stage 2 user prompt with vacancy data and Stage 1 results.
-    
-    Args:
-        title: Vacancy title
-        company_name: Company name
-        description: Original vacancy description
-        structured_data: Output from Stage 1 (VacancyStructuredData as dict or Pydantic model)
-        user_role: User's professional role/context (e.g., "Python/LLM Engineer", "DevOps Engineer")
+    Constructs the final prompt.
+    Strictly uses Pydantic dot-notation for Context and S1 Data.
     """
-    # Handle both dict and Pydantic model inputs
-    if hasattr(structured_data, "model_dump"):
-        structured_data = structured_data.model_dump()
-    
+
+    # 1. Salary Display (From DB Context)
+    salary_display = "Not specified in header"
+    if context.salary_from or context.salary_to:
+        curr = context.salary_currency or "USD"
+        salary_display = f"{context.salary_from or '?'} - {context.salary_to or '?'} {curr}"
+
+    # 2. Tech Stack & S1 Data (From Structured Data)
+    # Pydantic поля доступны через точку
+    tech_stack = ", ".join(s1_data.tech_stack) if s1_data.tech_stack else "Not specified"
+    grade = s1_data.grade.value if hasattr(s1_data.grade, "value") else str(s1_data.grade)
+    domain = s1_data.domain or "Not specified"
+    red_flags = ", ".join(s1_data.red_flag_keywords) if s1_data.red_flag_keywords else "None"
+
+    # 3. Benefits
+    benefits = ", ".join(s1_data.benefits) if s1_data.benefits else "None"
+
     return STAGE2_USER_PROMPT_TEMPLATE.format(
-        title=title,
-        company_name=company_name,
+        salary_display=salary_display,
+        domain=domain,
+        tech_stack=tech_stack,
+        grade=grade,
+        red_flag_keywords=red_flags,
+        description=context.description or "",
+        benefits=benefits,  # Добавил, если в шаблоне есть {benefits}
         user_role=user_role,
-        tech_stack=", ".join(structured_data.get("tech_stack", [])) or "Not specified",
-        grade=structured_data.get("grade", "Not specified"),
-        domain=structured_data.get("domain", "Not specified"),
-        salary=_format_salary(structured_data.get("salary_parse")),
-        benefits=", ".join(structured_data.get("benefits", [])) or "None mentioned",
-        red_flag_keywords=", ".join(structured_data.get("red_flag_keywords", [])) or "None detected",
-        description=description,
     )
 
 
 def _format_salary(salary_data: dict | None) -> str:
-    """Format salary data for display in prompt."""
+    # Legacy helper, оставляем на всякий случай, но основной лозунг теперь в format_stage2_prompt
     if not salary_data:
         return "Not specified"
-
     min_sal = salary_data.get("min")
     max_sal = salary_data.get("max")
-    currency = salary_data.get("currency", "USD")
-    is_gross = salary_data.get("is_gross", False)
-
+    curr = salary_data.get("currency", "USD")
     if min_sal and max_sal:
-        salary_str = f"{min_sal}-{max_sal} {currency}"
-    elif min_sal:
-        salary_str = f"from {min_sal} {currency}"
-    elif max_sal:
-        salary_str = f"up to {max_sal} {currency}"
-    else:
-        return "Not specified"
-
-    if is_gross:
-        salary_str += " (gross)"
-
-    return salary_str
+        return f"{min_sal}-{max_sal} {curr}"
+    return f"Up to {max_sal} {curr}" if max_sal else f"From {min_sal} {curr}"
